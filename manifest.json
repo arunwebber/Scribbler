@@ -2,12 +2,24 @@
   "manifest_version": 3,
   "name": "Scribbler",
   "version": "1.0",
-  "description": "Open a separate window to Scribbler",
+  "description": "Open a separate window to scribble",
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open scribble"
+    "default_title": "Open JSON Formatter",
+    "default_icon": {
+      "16": "images/icon_16.png",
+      "48": "images/icon_48.png",
+      "128": "images/icon_128.png"
+    }
   },
-  "permissions": ["storage"]
+  "permissions": ["tabs"],
+  "icons": {
+    "16": "images/icon_16.png",
+    "48": "images/icon_48.png",
+    "128": "images/icon_128.png"
+  },
+  "homepage_url": "https://www.arunsyoga.in", 
+  "author": "HashPalLabs"
 }
