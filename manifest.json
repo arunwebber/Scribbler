@@ -7,7 +7,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open JSON Formatter",
+    "default_title": "Just for scribble",
     "default_icon": {
       "16": "images/icon_16.png",
       "48": "images/icon_48.png",
