@@ -6,38 +6,56 @@ body, html {
     overflow: hidden;
 }
 
-/* Full screen container */
+/* Full-screen container */
 .container {
     width: 100vw;  /* 100% of the viewport width */
     height: 100vh; /* 100% of the viewport height */
     display: flex;
     flex-direction: column;
-    justify-content: flex-end; /* Aligns items at the bottom */
     background-color: #fff;
     position: relative;
 }
 
 /* Canvas styling */
 #scribbleCanvas {
-    width: 100%;
-    height: 100%;
+    flex-grow: 1; /* Canvas takes up remaining space */
+    width: 97%;
     border: none;
     cursor: crosshair; /* Cursor for drawing */
 }
 
 /* Clear button styling */
 #clearButton {
-    width: 100%;  /* Make the button take the full width of the window */
-    padding: 15px;
+    height: 70px; /* Increased height for the button */
+    width: 100%;  /* Full width of the viewport */
     background-color: #007bff;
     color: white;
     border: none;
-    font-size: 16px;
+    font-size: 18px; /* Slightly larger font */
     cursor: pointer;
-    box-sizing: border-box;  /* Ensures padding doesn't affect width */
+    text-align: center;
+    box-sizing: border-box;  /* Ensures padding doesn't affect the width */
     border-top: 1px solid #ccc;
 }
 
 #clearButton:hover {
     background-color: #0056b3;
 }
+
+
+/* Footer styling */
+#footer {
+    height: auto; /* Automatically adjust height based on content */
+    padding: 1px 3px; /* Minimal padding for spacing */
+    background-color: #f0f0f0;
+    border-top: 1px solid #ddd;
+    text-align: center;
+    font-size: 9px; /* Slightly smaller font size */
+    color: #333;
+    width: 100%; /* Full width of the viewport */
+    line-height: 1; /* Tightest spacing for single-line text */
+    overflow: hidden; /* Prevent any content overflow */
+    white-space: nowrap; /* Ensure the text doesn't wrap to a new line */
+}
+
+
