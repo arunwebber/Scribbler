@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/arunwebber/Scribbler/refs/heads/main/images/icon_128.png" alt="Centered Icon" width="128" height="128">
+</p>
+
 # Scribbler Chrome Extension
 
 ## Overview
