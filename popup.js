@@ -153,25 +153,28 @@ class ImageManager {
 
         this.setupEventListeners();
         this.loadImages();
-        this.updatePointers(); // Initial call to set correct pointer events
     }
     
-    // Updates the active tab ID. Should be called by TabManager on tab switch.
     setActiveTab(tabId) {
         this.activeTabId = tabId;
         this.imageLayer.innerHTML = '';
         this.currentImage = null;
         this.loadImages();
-        this.updatePointers();
     }
 
     setupEventListeners() {
         this.uploadButton.addEventListener('click', () => this.imageInput.click());
         this.imageInput.addEventListener('change', (e) => this.handleImageUpload(e));
         
-        document.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+        // Use the image layer for event delegation
+        this.imageLayer.addEventListener('mousedown', (e) => this.handleMouseDown(e));
         document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         document.addEventListener('mouseup', () => this.handleMouseUp());
+        
+        // Touch events for mobile
+        this.imageLayer.addEventListener('touchstart', (e) => this.handleTouchStart(e), {passive: false});
+        document.addEventListener('touchmove', (e) => this.handleTouchMove(e), {passive: false});
+        document.addEventListener('touchend', () => this.handleMouseUp());
     }
 
     handleImageUpload(e) {
@@ -181,19 +184,20 @@ class ImageManager {
         const reader = new FileReader();
         reader.onload = (event) => {
             if (this.currentImage) {
-                this.currentImage.remove(); // Remove previous image
+                this.currentImage.remove();
             }
             const imageData = {
                 src: event.target.result,
-                left: 0,
-                top: 0,
-                width: 200, // Default width
+                left: 50,
+                top: 50,
+                width: 200,
                 height: 'auto'
             };
             this.createImageElement(imageData);
             this.saveImageState();
         };
         reader.readAsDataURL(file);
+        this.imageInput.value = ''; // Reset input for same file upload
     }
 
     createImageElement(imageData) {
@@ -201,14 +205,17 @@ class ImageManager {
         container.classList.add('image-container');
         container.style.left = `${imageData.left}px`;
         container.style.top = `${imageData.top}px`;
-        container.style.width = `${imageData.width}px`;
-
+        
         const img = document.createElement('img');
         img.src = imageData.src;
-        img.draggable = false; // Prevent default drag behavior
-
+        img.draggable = false;
+        img.style.width = `${imageData.width}px`;
+        img.style.height = 'auto';
+        img.style.pointerEvents = 'none'; // Prevent image from capturing events
+        
         container.appendChild(img);
 
+        // Add resize handles
         ['tl', 'tr', 'bl', 'br'].forEach(pos => {
             const handle = document.createElement('div');
             handle.classList.add('resize-handle', pos);
@@ -218,32 +225,32 @@ class ImageManager {
         this.imageLayer.appendChild(container);
         this.currentImage = container;
 
-        this.centerImage();
-        this.updatePointers();
+        // Wait for image to load to center it properly
+        img.onload = () => {
+            this.centerImage();
+            this.saveImageState();
+        };
     }
 
     centerImage() {
+        if (!this.currentImage) return;
         const layerRect = this.imageLayer.getBoundingClientRect();
         const imgRect = this.currentImage.getBoundingClientRect();
-        const newX = (layerRect.width - imgRect.width) / 2;
-        const newY = (layerRect.height - imgRect.height) / 2;
+        const newX = Math.max(0, (layerRect.width - imgRect.width) / 2);
+        const newY = Math.max(0, (layerRect.height - imgRect.height) / 2);
         this.currentImage.style.left = `${newX}px`;
         this.currentImage.style.top = `${newY}px`;
     }
 
-    updatePointers() {
-        this.imageLayer.style.pointerEvents = this.currentImage ? 'auto' : 'none';
-        this.imageLayer.querySelectorAll('.image-container').forEach(el => el.style.pointerEvents = 'auto');
-    }
-    
     saveImageState() {
         if (this.currentImage) {
+            const img = this.currentImage.querySelector('img');
             const state = {
-                src: this.currentImage.querySelector('img').src,
+                src: img.src,
                 left: this.currentImage.offsetLeft,
                 top: this.currentImage.offsetTop,
-                width: this.currentImage.offsetWidth,
-                height: this.currentImage.offsetHeight
+                width: img.offsetWidth,
+                height: img.offsetHeight
             };
             StorageManager.saveToLocalStorage(`imageState_${this.activeTabId}`, JSON.stringify(state));
         }
@@ -268,74 +275,112 @@ class ImageManager {
         this.imageLayer.innerHTML = '';
         this.currentImage = null;
         StorageManager.removeFromLocalStorage(`imageState_${this.activeTabId}`);
-        this.updatePointers();
     }
 
     handleMouseDown(e) {
         const target = e.target;
-        if (target.classList.contains('image-container')) {
+        
+        if (target.classList.contains('resize-handle')) {
             e.preventDefault();
-            this.isDragging = true;
-            this.currentImage = target;
-            this.startX = e.clientX;
-            this.startY = e.clientY;
-            this.initialLeft = this.currentImage.offsetLeft;
-            this.initialTop = this.currentImage.offsetTop;
-            this.currentImage.style.cursor = 'grabbing';
-        } else if (target.classList.contains('resize-handle')) {
-            e.preventDefault();
+            e.stopPropagation();
             this.isResizing = true;
             this.activeHandle = target;
-            this.currentImage = target.closest('.image-container');
+            this.currentImage = target.parentElement;
             this.startX = e.clientX;
             this.startY = e.clientY;
-            this.initialWidth = this.currentImage.offsetWidth;
-            this.initialHeight = this.currentImage.offsetHeight;
+            const img = this.currentImage.querySelector('img');
+            this.initialWidth = img.offsetWidth;
+            this.initialHeight = img.offsetHeight;
+            this.initialLeft = this.currentImage.offsetLeft;
+            this.initialTop = this.currentImage.offsetTop;
+        } else if (target.classList.contains('image-container') || target.parentElement?.classList.contains('image-container')) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.isDragging = true;
+            this.currentImage = target.classList.contains('image-container') ? target : target.parentElement;
+            this.currentImage.classList.add('dragging');
+            this.startX = e.clientX;
+            this.startY = e.clientY;
             this.initialLeft = this.currentImage.offsetLeft;
             this.initialTop = this.currentImage.offsetTop;
         }
     }
 
+    handleTouchStart(e) {
+        const touch = e.touches[0];
+        const target = document.elementFromPoint(touch.clientX, touch.clientY);
+        
+        if (target && (target.classList.contains('image-container') || target.parentElement?.classList.contains('image-container'))) {
+            e.preventDefault();
+            const fakeMouseEvent = {
+                target: target,
+                clientX: touch.clientX,
+                clientY: touch.clientY,
+                preventDefault: () => {},
+                stopPropagation: () => {}
+            };
+            this.handleMouseDown(fakeMouseEvent);
+        }
+    }
+
     handleMouseMove(e) {
-        if (this.isDragging) {
+        if (this.isDragging && this.currentImage) {
             e.preventDefault();
             const dx = e.clientX - this.startX;
             const dy = e.clientY - this.startY;
-            this.currentImage.style.left = `${this.initialLeft + dx}px`;
-            this.currentImage.style.top = `${this.initialTop + dy}px`;
-        } else if (this.isResizing) {
+            
+            const newLeft = this.initialLeft + dx;
+            const newTop = this.initialTop + dy;
+            
+            this.currentImage.style.left = `${newLeft}px`;
+            this.currentImage.style.top = `${newTop}px`;
+        } else if (this.isResizing && this.currentImage) {
             e.preventDefault();
             const dx = e.clientX - this.startX;
             const dy = e.clientY - this.startY;
+            const img = this.currentImage.querySelector('img');
 
             let newWidth = this.initialWidth;
             let newHeight = this.initialHeight;
             let newLeft = this.initialLeft;
             let newTop = this.initialTop;
 
-            if (this.activeHandle.classList.contains('br') || this.activeHandle.classList.contains('tr')) {
-                newWidth = this.initialWidth + dx;
-            }
-            if (this.activeHandle.classList.contains('bl') || this.activeHandle.classList.contains('tl')) {
-                newWidth = this.initialWidth - dx;
-                newLeft = this.initialLeft + dx;
-            }
-            if (this.activeHandle.classList.contains('br') || this.activeHandle.classList.contains('bl')) {
-                newHeight = this.initialHeight + dy;
-            }
-            if (this.activeHandle.classList.contains('tr') || this.activeHandle.classList.contains('tl')) {
-                newHeight = this.initialHeight - dy;
-                newTop = this.initialTop + dy;
+            const aspectRatio = this.initialWidth / this.initialHeight;
+
+            if (this.activeHandle.classList.contains('br')) {
+                newWidth = Math.max(50, this.initialWidth + dx);
+                newHeight = newWidth / aspectRatio;
+            } else if (this.activeHandle.classList.contains('bl')) {
+                newWidth = Math.max(50, this.initialWidth - dx);
+                newHeight = newWidth / aspectRatio;
+                newLeft = this.initialLeft + this.initialWidth - newWidth;
+            } else if (this.activeHandle.classList.contains('tr')) {
+                newWidth = Math.max(50, this.initialWidth + dx);
+                newHeight = newWidth / aspectRatio;
+                newTop = this.initialTop + this.initialHeight - newHeight;
+            } else if (this.activeHandle.classList.contains('tl')) {
+                newWidth = Math.max(50, this.initialWidth - dx);
+                newHeight = newWidth / aspectRatio;
+                newLeft = this.initialLeft + this.initialWidth - newWidth;
+                newTop = this.initialTop + this.initialHeight - newHeight;
             }
 
-            if (newWidth > 50) {
-                this.currentImage.style.width = `${newWidth}px`;
-                this.currentImage.style.left = `${newLeft}px`;
-            }
-            if (newHeight > 50) {
-                this.currentImage.style.height = `${newHeight}px`;
-                this.currentImage.style.top = `${newTop}px`;
-            }
+            img.style.width = `${newWidth}px`;
+            img.style.height = `${newHeight}px`;
+            this.currentImage.style.left = `${newLeft}px`;
+            this.currentImage.style.top = `${newTop}px`;
+        }
+    }
+
+    handleTouchMove(e) {
+        if (this.isDragging || this.isResizing) {
+            const touch = e.touches[0];
+            const fakeMouseEvent = {
+                clientX: touch.clientX,
+                clientY: touch.clientY,
+                preventDefault: () => {}
+            };
+            this.handleMouseMove(fakeMouseEvent);
         }
     }
 
@@ -343,12 +388,12 @@ class ImageManager {
         if (this.isDragging || this.isResizing) {
             this.saveImageState();
         }
+        if (this.currentImage) {
+            this.currentImage.classList.remove('dragging');
+        }
         this.isDragging = false;
         this.isResizing = false;
         this.activeHandle = null;
-        if (this.currentImage) {
-            this.currentImage.style.cursor = 'grab';
-        }
     }
 }
 
