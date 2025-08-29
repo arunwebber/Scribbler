@@ -132,6 +132,155 @@ class TouchManager {
     }
 }
 
+// ImageManager Class: Manages the uploaded, draggable, and resizable images
+class ImageManager {
+    constructor(imageLayerId) {
+        this.imageLayer = document.getElementById(imageLayerId);
+        this.imageInput = document.getElementById('image-upload');
+        this.uploadButton = document.getElementById('uploadImageBtn');
+
+        this.currentImage = null;
+        this.isDragging = false;
+        this.isResizing = false;
+        this.activeHandle = null;
+        this.startX = 0;
+        this.startY = 0;
+
+        this.setupEventListeners();
+    }
+
+    setupEventListeners() {
+        this.uploadButton.addEventListener('click', () => this.imageInput.click());
+        this.imageInput.addEventListener('change', (e) => this.handleImageUpload(e));
+        
+        document.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+        document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        document.addEventListener('mouseup', () => this.handleMouseUp());
+    }
+
+    handleImageUpload(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            if (this.currentImage) {
+                this.currentImage.remove(); // Remove previous image
+            }
+            this.createImageElement(event.target.result);
+        };
+        reader.readAsDataURL(file);
+    }
+
+    createImageElement(src) {
+        const container = document.createElement('div');
+        container.classList.add('image-container');
+
+        const img = document.createElement('img');
+        img.src = src;
+        img.draggable = false; // Prevent default drag behavior
+
+        container.appendChild(img);
+
+        ['tl', 'tr', 'bl', 'br'].forEach(pos => {
+            const handle = document.createElement('div');
+            handle.classList.add('resize-handle', pos);
+            container.appendChild(handle);
+        });
+
+        this.imageLayer.appendChild(container);
+        this.currentImage = container;
+
+        this.centerImage();
+        this.updatePointers();
+    }
+
+    centerImage() {
+        const layerRect = this.imageLayer.getBoundingClientRect();
+        const imgRect = this.currentImage.getBoundingClientRect();
+        const newX = (layerRect.width - imgRect.width) / 2;
+        const newY = (layerRect.height - imgRect.height) / 2;
+        this.currentImage.style.left = `${newX}px`;
+        this.currentImage.style.top = `${newY}px`;
+    }
+
+    updatePointers() {
+        this.imageLayer.style.pointerEvents = this.currentImage ? 'auto' : 'none';
+        this.imageLayer.querySelectorAll('.image-container').forEach(el => el.style.pointerEvents = 'auto');
+    }
+
+    handleMouseDown(e) {
+        const target = e.target;
+        if (target.classList.contains('image-container')) {
+            this.isDragging = true;
+            this.currentImage = target;
+            this.startX = e.clientX - this.currentImage.offsetLeft;
+            this.startY = e.clientY - this.currentImage.offsetTop;
+            this.currentImage.style.cursor = 'grabbing';
+        } else if (target.classList.contains('resize-handle')) {
+            this.isResizing = true;
+            this.activeHandle = target;
+            this.currentImage = target.closest('.image-container');
+            this.startX = e.clientX;
+            this.startY = e.clientY;
+            this.initialWidth = this.currentImage.offsetWidth;
+            this.initialHeight = this.currentImage.offsetHeight;
+            this.initialLeft = this.currentImage.offsetLeft;
+            this.initialTop = this.currentImage.offsetTop;
+        }
+    }
+
+    handleMouseMove(e) {
+        if (this.isDragging) {
+            e.preventDefault();
+            this.currentImage.style.left = `${e.clientX - this.startX}px`;
+            this.currentImage.style.top = `${e.clientY - this.startY}px`;
+        } else if (this.isResizing) {
+            e.preventDefault();
+            const dx = e.clientX - this.startX;
+            const dy = e.clientY - this.startY;
+
+            let newWidth = this.initialWidth;
+            let newHeight = this.initialHeight;
+            let newLeft = this.initialLeft;
+            let newTop = this.initialTop;
+
+            if (this.activeHandle.classList.contains('br') || this.activeHandle.classList.contains('tr')) {
+                newWidth = this.initialWidth + dx;
+            }
+            if (this.activeHandle.classList.contains('bl') || this.activeHandle.classList.contains('tl')) {
+                newWidth = this.initialWidth - dx;
+                newLeft = this.initialLeft + dx;
+            }
+            if (this.activeHandle.classList.contains('br') || this.activeHandle.classList.contains('bl')) {
+                newHeight = this.initialHeight + dy;
+            }
+            if (this.activeHandle.classList.contains('tr') || this.activeHandle.classList.contains('tl')) {
+                newHeight = this.initialHeight - dy;
+                newTop = this.initialTop + dy;
+            }
+
+            if (newWidth > 50) {
+                this.currentImage.style.width = `${newWidth}px`;
+                this.currentImage.style.left = `${newLeft}px`;
+            }
+            if (newHeight > 50) {
+                this.currentImage.style.height = `${newHeight}px`;
+                this.currentImage.style.top = `${newTop}px`;
+            }
+        }
+    }
+
+    handleMouseUp() {
+        this.isDragging = false;
+        this.isResizing = false;
+        this.activeHandle = null;
+        if (this.currentImage) {
+            this.currentImage.style.cursor = 'grab';
+        }
+    }
+}
+
 // TabManager Class: Handles multi-sheet functionality
 class TabManager {
     static activeTabId = 'tab-1';
@@ -330,17 +479,17 @@ class ScribbleCanvas {
     // Resize the canvas to fit the window
     _resizeCanvas() {
         const sidebar = document.querySelector('.controls-sidebar');
-        const bottomControls = document.querySelector('.bottom-controls');
+        const footer = document.querySelector('#footer');
         const header = document.getElementById('header');
         const tabBar = document.getElementById('tab-bar');
 
         const sidebarWidth = sidebar ? sidebar.offsetWidth : 0;
-        const bottomControlsHeight = bottomControls ? bottomControls.offsetHeight : 0;
+        const footerHeight = footer ? footer.offsetHeight : 0;
         const headerHeight = header ? header.offsetHeight : 0;
         const tabBarHeight = tabBar ? tabBar.offsetHeight : 0;
 
         this.canvas.width = window.innerWidth - sidebarWidth;
-        this.canvas.height = window.innerHeight - bottomControlsHeight - headerHeight - tabBarHeight;
+        this.canvas.height = window.innerHeight - footerHeight - headerHeight - tabBarHeight;
         this.loadCanvasState(); // Reload the canvas content after resizing
     }
 
@@ -438,7 +587,7 @@ class ScribbleCanvas {
             this.ctx.stroke();
         }
     }
-
+    
     // Function to download the canvas as an image
     downloadCanvas() {
         const url = this.canvas.toDataURL('image/png');
@@ -448,36 +597,6 @@ class ScribbleCanvas {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-    }
-    
-    // Function to upload and draw an image on the canvas
-    uploadImage() {
-        const fileInput = document.getElementById('image-upload');
-        fileInput.click(); // Trigger the hidden file input click
-
-        fileInput.onchange = (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const img = new Image();
-                img.onload = () => {
-                    this.saveState();
-                    // Draw the uploaded image on the canvas, scaling to fit
-                    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                    const hRatio = this.canvas.width / img.width;
-                    const vRatio = this.canvas.height / img.height;
-                    const ratio = Math.min(hRatio, vRatio);
-                    const centerShift_x = (this.canvas.width - img.width * ratio) / 2;
-                    const centerShift_y = (this.canvas.height - img.height * ratio) / 2;
-                    this.ctx.drawImage(img, 0, 0, img.width, img.height, centerShift_x, centerShift_y, img.width * ratio, img.height * ratio);
-                    StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, this.canvas.toDataURL());
-                };
-                img.src = event.target.result;
-            };
-            reader.readAsDataURL(file);
-        };
     }
     
     // Function to print the canvas content
@@ -514,7 +633,6 @@ class ScribbleCanvas {
         });
 
         document.getElementById('downloadBtn').addEventListener('click', () => this.downloadCanvas());
-        document.getElementById('uploadBtn').addEventListener('click', () => this.uploadImage());
         document.getElementById('printBtn').addEventListener('click', () => this.printCanvas());
     }
 }
@@ -535,5 +653,6 @@ if (StorageManager.getFromLocalStorage('darkMode') === 'true') {
 // Initialize the application
 document.addEventListener("DOMContentLoaded", () => {
     const scribbleCanvas = new ScribbleCanvas('scribbleCanvas', 'clearButton');
+    const imageManager = new ImageManager('image-layer');
     TabManager.initialize(scribbleCanvas);
 });
