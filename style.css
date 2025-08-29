@@ -62,6 +62,11 @@ body.dark-mode #header {
     text-align: center;
 }
 
+#header-controls {
+    display: flex;
+    gap: 10px;
+}
+
 /* Dark Mode Toggle Switch */
 .switch {
     position: relative;
@@ -317,26 +322,18 @@ body.dark-mode #scribbleCanvas {
 }
 
 #clearButton {
-    height: 50px;
-    width: 100%;
     background-color: var(--primary-color);
     color: white;
     border: none;
-    font-size: 18px;
+    padding: 8px 16px;
+    border-radius: 5px;
     cursor: pointer;
-    text-align: center;
-    box-sizing: border-box;
-    border-top: 1px solid var(--border-light);
-    padding: 10px 0;
+    font-size: 14px;
     transition: background-color 0.2s;
 }
 
 #clearButton:hover {
     background-color: #0056b3;
-}
-
-body.dark-mode #clearButton {
-    border-color: var(--border-dark);
 }
 
 #footer {
