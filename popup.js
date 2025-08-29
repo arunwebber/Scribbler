@@ -134,10 +134,14 @@ class ScribbleCanvas {
         this.ctx = this.canvas.getContext('2d');
         this.drawing = false;
         this.points = [];
+        
+        // Call resizeCanvas() here to set initial canvas dimensions
+        this.resizeCanvas();
+        window.addEventListener('resize', () => this.resizeCanvas());
 
         // Initialize KeyboardShortcutManager with the canvas element
         this.keyboardShortcutManager = new KeyboardShortcutManager(this.canvas);
-
+        
         // Load the saved canvas state from localStorage
         const savedState = StorageManager.getFromLocalStorage('canvasState', '');
         if (savedState) {
@@ -149,6 +153,7 @@ class ScribbleCanvas {
         }
 
         this.setupCanvas();
+        this.setupControls();
         this.attachEventListeners(clearButtonId);
 
         // Initialize TouchManager with touch handling callbacks
@@ -162,19 +167,74 @@ class ScribbleCanvas {
 
     // Set up canvas properties and resize functionality
     setupCanvas() {
-        this.resizeCanvas();
-        window.addEventListener('resize', () => this.resizeCanvas());
-
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
         this.ctx.lineWidth = 5;
         this.ctx.strokeStyle = '#000';
     }
 
+    // Function to generate a random hex color
+    getRandomColor() {
+        const letters = '0123456789ABCDEF';
+        let color = '#';
+        for (let i = 0; i < 6; i++) {
+            color += letters[Math.floor(Math.random() * 16)];
+        }
+        return color;
+    }
+
+    // Setup color palette and brush size controls
+    setupControls() {
+        const colorPaletteGrid = document.getElementById('colorPaletteGrid');
+        const colors = [
+            '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#FFFF00',
+            '#FF00FF', '#00FFFF', '#808080', '#C0C0C0', '#800000', '#808000',
+            '#008000', '#800080', '#008080', '#000080', '#FF4500', '#2E8B57',
+            '#D2691E', '#4B0082', '#A52A2A', '#DDA0DD', '#F5DEB3', '#9ACD32',
+            '#20B2AA', '#F08080', '#6B8E23', '#FF69B4', '#CD5C5C', '#FFA07A',
+            '#90EE90', '#F4A460', '#BA55D3', '#DAA520', '#C71585', '#00BFFF'
+        ];
+
+        // Generate the color grid
+        colors.forEach(color => {
+            const colorBox = document.createElement('div');
+            colorBox.classList.add('color-box');
+            colorBox.style.backgroundColor = color;
+            colorBox.setAttribute('data-color', color);
+            colorPaletteGrid.appendChild(colorBox);
+
+            colorBox.addEventListener('click', () => {
+                document.querySelectorAll('.color-box').forEach(box => box.classList.remove('active'));
+                colorBox.classList.add('active');
+                this.ctx.strokeStyle = color;
+            });
+        });
+
+        // Set initial active color
+        if (document.querySelector('.color-box[data-color="#000000"]')) {
+            document.querySelector('.color-box[data-color="#000000"]').classList.add('active');
+        }
+
+        // Brush size slider
+        const brushSizeSlider = document.getElementById('brushSizeSlider');
+        const brushSizeValue = document.getElementById('brushSizeValue');
+        
+        brushSizeSlider.addEventListener('input', () => {
+            const size = brushSizeSlider.value;
+            this.ctx.lineWidth = size;
+            brushSizeValue.textContent = size;
+        });
+    }
+
     // Resize the canvas to fit the window
     resizeCanvas() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight - 50;
+        const sidebar = document.querySelector('.controls-sidebar');
+        const bottomControls = document.querySelector('.bottom-controls');
+        const sidebarWidth = sidebar ? sidebar.offsetWidth : 0;
+        const bottomControlsHeight = bottomControls ? bottomControls.offsetHeight : 0;
+        
+        this.canvas.width = window.innerWidth - sidebarWidth;
+        this.canvas.height = window.innerHeight - bottomControlsHeight;
     }
 
     // Save the current state to undo stack

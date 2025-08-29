@@ -7,12 +7,24 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
     <div class="container">
-        <canvas id="scribbleCanvas"></canvas>
-        <button id="clearButton">Clear</button>
-        <div id="footer">
-            For support and code base:<a target="_blank" href="https://hashpallabs.com/">HahsPalLabs</a>.
+        <div class="controls-sidebar">
+            <div class="brush-size-control">
+                <label for="brushSizeSlider">Brush Size:</label>
+                <input type="range" id="brushSizeSlider" min="1" max="50" value="5">
+                <span id="brushSizeValue">5</span>
+            </div>
+            <div id="colorPaletteGrid">
+                </div>
+        </div>
+        <div class="main-content">
+            <canvas id="scribbleCanvas"></canvas>
+            <div class="bottom-controls">
+                <button id="clearButton">Clear</button>
+                <div id="footer">
+                    For support and code base:<a target="_blank" href="https://hashpallabs.com/">HahsPalLabs</a>.
+                </div>
+            </div>
         </div>
     </div>
     <script src="popup.js"></script>
