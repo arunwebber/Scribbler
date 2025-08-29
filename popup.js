@@ -127,17 +127,18 @@ class TouchManager {
     attachTouchEvents() {
         this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e));
         this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e));
-        this.canvas.addEventListener('touchend', () => this.stopDrawingCallback());
-        this.canvas.addEventListener('touchcancel', () => this.stopDrawingCallback());
+        this.canvas.addEventListener('touchend', () => this.stopDrawing());
+        this.canvas.addEventListener('touchcancel', () => this.stopDrawing());
     }
 }
 
 // ImageManager Class: Manages the uploaded, draggable, and resizable images
 class ImageManager {
-    constructor(imageLayerId) {
+    constructor(imageLayerId, activeTabId) {
         this.imageLayer = document.getElementById(imageLayerId);
         this.imageInput = document.getElementById('image-upload');
         this.uploadButton = document.getElementById('uploadImageBtn');
+        this.activeTabId = activeTabId;
 
         this.currentImage = null;
         this.isDragging = false;
@@ -145,8 +146,23 @@ class ImageManager {
         this.activeHandle = null;
         this.startX = 0;
         this.startY = 0;
+        this.initialWidth = 0;
+        this.initialHeight = 0;
+        this.initialLeft = 0;
+        this.initialTop = 0;
 
         this.setupEventListeners();
+        this.loadImages();
+        this.updatePointers(); // Initial call to set correct pointer events
+    }
+    
+    // Updates the active tab ID. Should be called by TabManager on tab switch.
+    setActiveTab(tabId) {
+        this.activeTabId = tabId;
+        this.imageLayer.innerHTML = '';
+        this.currentImage = null;
+        this.loadImages();
+        this.updatePointers();
     }
 
     setupEventListeners() {
@@ -167,17 +183,28 @@ class ImageManager {
             if (this.currentImage) {
                 this.currentImage.remove(); // Remove previous image
             }
-            this.createImageElement(event.target.result);
+            const imageData = {
+                src: event.target.result,
+                left: 0,
+                top: 0,
+                width: 200, // Default width
+                height: 'auto'
+            };
+            this.createImageElement(imageData);
+            this.saveImageState();
         };
         reader.readAsDataURL(file);
     }
 
-    createImageElement(src) {
+    createImageElement(imageData) {
         const container = document.createElement('div');
         container.classList.add('image-container');
+        container.style.left = `${imageData.left}px`;
+        container.style.top = `${imageData.top}px`;
+        container.style.width = `${imageData.width}px`;
 
         const img = document.createElement('img');
-        img.src = src;
+        img.src = imageData.src;
         img.draggable = false; // Prevent default drag behavior
 
         container.appendChild(img);
@@ -208,16 +235,55 @@ class ImageManager {
         this.imageLayer.style.pointerEvents = this.currentImage ? 'auto' : 'none';
         this.imageLayer.querySelectorAll('.image-container').forEach(el => el.style.pointerEvents = 'auto');
     }
+    
+    saveImageState() {
+        if (this.currentImage) {
+            const state = {
+                src: this.currentImage.querySelector('img').src,
+                left: this.currentImage.offsetLeft,
+                top: this.currentImage.offsetTop,
+                width: this.currentImage.offsetWidth,
+                height: this.currentImage.offsetHeight
+            };
+            StorageManager.saveToLocalStorage(`imageState_${this.activeTabId}`, JSON.stringify(state));
+        }
+    }
+
+    loadImages() {
+        const savedState = StorageManager.getFromLocalStorage(`imageState_${this.activeTabId}`);
+        if (savedState) {
+            try {
+                const imageData = JSON.parse(savedState);
+                if (imageData && imageData.src) {
+                    this.createImageElement(imageData);
+                }
+            } catch (e) {
+                console.error("Failed to parse image state:", e);
+                StorageManager.removeFromLocalStorage(`imageState_${this.activeTabId}`);
+            }
+        }
+    }
+
+    clearImages() {
+        this.imageLayer.innerHTML = '';
+        this.currentImage = null;
+        StorageManager.removeFromLocalStorage(`imageState_${this.activeTabId}`);
+        this.updatePointers();
+    }
 
     handleMouseDown(e) {
         const target = e.target;
         if (target.classList.contains('image-container')) {
+            e.preventDefault();
             this.isDragging = true;
             this.currentImage = target;
-            this.startX = e.clientX - this.currentImage.offsetLeft;
-            this.startY = e.clientY - this.currentImage.offsetTop;
+            this.startX = e.clientX;
+            this.startY = e.clientY;
+            this.initialLeft = this.currentImage.offsetLeft;
+            this.initialTop = this.currentImage.offsetTop;
             this.currentImage.style.cursor = 'grabbing';
         } else if (target.classList.contains('resize-handle')) {
+            e.preventDefault();
             this.isResizing = true;
             this.activeHandle = target;
             this.currentImage = target.closest('.image-container');
@@ -233,8 +299,10 @@ class ImageManager {
     handleMouseMove(e) {
         if (this.isDragging) {
             e.preventDefault();
-            this.currentImage.style.left = `${e.clientX - this.startX}px`;
-            this.currentImage.style.top = `${e.clientY - this.startY}px`;
+            const dx = e.clientX - this.startX;
+            const dy = e.clientY - this.startY;
+            this.currentImage.style.left = `${this.initialLeft + dx}px`;
+            this.currentImage.style.top = `${this.initialTop + dy}px`;
         } else if (this.isResizing) {
             e.preventDefault();
             const dx = e.clientX - this.startX;
@@ -272,6 +340,9 @@ class ImageManager {
     }
 
     handleMouseUp() {
+        if (this.isDragging || this.isResizing) {
+            this.saveImageState();
+        }
         this.isDragging = false;
         this.isResizing = false;
         this.activeHandle = null;
@@ -286,9 +357,11 @@ class TabManager {
     static activeTabId = 'tab-1';
     static tabList = [];
     static canvasInstance = null; // Reference to the ScribbleCanvas instance
+    static imageManager = null; // Reference to the ImageManager instance
 
-    static initialize(canvasInstance) {
+    static initialize(canvasInstance, imageManager) {
         this.canvasInstance = canvasInstance;
+        this.imageManager = imageManager;
         this.tabContainer = document.getElementById('tab-container');
         this.addTabBtn = document.getElementById('add-tab-btn');
 
@@ -413,6 +486,7 @@ class TabManager {
             newActiveTab.classList.add('active');
             this.activeTabId = tabId;
             this.canvasInstance.loadCanvasState();
+            this.imageManager.setActiveTab(tabId);
             this.saveTabsToStorage();
         }
     }
@@ -425,6 +499,7 @@ class TabManager {
 
         this.tabList = this.tabList.filter(tab => tab.id !== tabId);
         StorageManager.removeFromLocalStorage(`canvasState_${tabId}`);
+        StorageManager.removeFromLocalStorage(`imageState_${tabId}`);
 
         if (this.activeTabId === tabId) {
             const newActiveTabId = this.tabList[0].id; // Switch to the first tab
@@ -437,11 +512,12 @@ class TabManager {
 }
 
 class ScribbleCanvas {
-    constructor(canvasId, clearButtonId) {
+    constructor(canvasId, clearButtonId, imageManager) {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext('2d');
         this.drawing = false;
         this.points = [];
+        this.imageManager = imageManager;
         
         this.resizeCanvas = debounce(this._resizeCanvas.bind(this), 200);
         this.resizeCanvas();
@@ -616,6 +692,7 @@ class ScribbleCanvas {
         printWindow.document.close();
         printWindow.focus();
         printWindow.print();
+        printWindow.close();
     }
 
     attachEventListeners(clearButtonId) {
@@ -629,6 +706,7 @@ class ScribbleCanvas {
         document.getElementById(clearButtonId).addEventListener('click', () => {
             this.saveState();
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            this.imageManager.clearImages();
             StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, '');
         });
 
@@ -652,7 +730,7 @@ if (StorageManager.getFromLocalStorage('darkMode') === 'true') {
 
 // Initialize the application
 document.addEventListener("DOMContentLoaded", () => {
-    const scribbleCanvas = new ScribbleCanvas('scribbleCanvas', 'clearButton');
     const imageManager = new ImageManager('image-layer');
-    TabManager.initialize(scribbleCanvas);
+    const scribbleCanvas = new ScribbleCanvas('scribbleCanvas', 'clearButton', imageManager);
+    TabManager.initialize(scribbleCanvas, imageManager);
 });
