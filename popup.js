@@ -135,7 +135,6 @@ class TouchManager {
 // TabManager Class: Handles multi-sheet functionality
 class TabManager {
     static activeTabId = 'tab-1';
-    static tabCounter = 1;
     static tabList = [];
     static canvasInstance = null; // Reference to the ScribbleCanvas instance
 
@@ -167,12 +166,20 @@ class TabManager {
         StorageManager.saveToLocalStorage('scribbler_tabs', JSON.stringify(this.tabList));
         StorageManager.saveToLocalStorage('scribbler_activeTabId', this.activeTabId);
     }
+    
+    static generateUniqueTabTitle() {
+        const highestNumber = this.tabList.reduce((max, tab) => {
+            const num = parseInt(tab.title.replace('Sheet ', '')) || 0;
+            return Math.max(max, num);
+        }, 0);
+        return `Sheet ${highestNumber + 1}`;
+    }
 
     static addTab() {
-        const newTabId = `tab-${this.tabCounter++}`;
+        const newTabId = `tab-${Date.now()}`;
         const newTab = {
             id: newTabId,
-            title: `Sheet ${this.tabCounter - 1}`,
+            title: this.generateUniqueTabTitle(),
         };
         this.tabList.push(newTab);
         this.renderTab(newTab);
@@ -184,20 +191,63 @@ class TabManager {
         const tabElement = document.createElement('div');
         tabElement.classList.add('tab');
         tabElement.id = tab.id;
-        tabElement.innerHTML = `
-            <span class="tab-title">${tab.title}</span>
-            <button class="tab-close-btn">&times;</button>
-        `;
-        this.tabContainer.appendChild(tabElement);
+        
+        const titleSpan = document.createElement('span');
+        titleSpan.classList.add('tab-title');
+        titleSpan.textContent = tab.title;
 
+        // Double-click event listener for renaming
+        titleSpan.ondblclick = (e) => {
+            e.stopPropagation();
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = tab.title;
+            input.className = 'edit-title';
+
+            tabElement.replaceChild(input, titleSpan);
+            input.focus();
+
+            const saveTitle = () => {
+                const newTitle = input.value.trim() || tab.title;
+                const existingTab = this.tabList.find(t => t.id === tab.id);
+                if (existingTab) {
+                    existingTab.title = newTitle;
+                    this.saveTabsToStorage();
+                }
+                this.renderTabs(); // Re-render all tabs to show the new title
+            };
+
+            input.addEventListener('blur', saveTitle);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    input.blur();
+                }
+            });
+        };
+
+        const closeBtn = document.createElement('button');
+        closeBtn.classList.add('tab-close-btn');
+        closeBtn.innerHTML = '&times;';
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.removeTab(tab.id);
+        });
+        
+        tabElement.appendChild(titleSpan);
+        tabElement.appendChild(closeBtn);
+        this.tabContainer.appendChild(tabElement);
+        
         tabElement.addEventListener('click', (e) => {
-            if (e.target.classList.contains('tab-close-btn')) {
-                e.stopPropagation();
-                this.removeTab(tab.id);
-            } else {
+            if (!e.target.classList.contains('tab-close-btn')) {
                 this.switchToTab(tab.id);
             }
         });
+    }
+
+    static renderTabs() {
+        this.tabContainer.innerHTML = '';
+        this.tabList.forEach(tab => this.renderTab(tab));
+        this.switchToTab(this.activeTabId);
     }
 
     static switchToTab(tabId) {
@@ -223,16 +273,15 @@ class TabManager {
             return;
         }
 
-        const tabToRemove = document.getElementById(tabId);
-        tabToRemove.remove();
         this.tabList = this.tabList.filter(tab => tab.id !== tabId);
         StorageManager.removeFromLocalStorage(`canvasState_${tabId}`);
 
         if (this.activeTabId === tabId) {
-            const newActiveTabId = this.tabList[this.tabList.length - 1].id;
+            const newActiveTabId = this.tabList[0].id; // Switch to the first tab
             this.switchToTab(newActiveTabId);
         } else {
             this.saveTabsToStorage();
+            this.renderTabs(); // Re-render all tabs
         }
     }
 }
