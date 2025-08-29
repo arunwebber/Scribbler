@@ -1,6 +1,15 @@
-// StorageManager Class: Handles localStorage operations
+// Global utility functions
+function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+        const context = this;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), wait);
+    };
+}
+
+// StorageManager Class: Handles localStorage operations for multiple tabs
 class StorageManager {
-    // Save data to localStorage
     static saveToLocalStorage(key, value) {
         try {
             localStorage.setItem(key, value);
@@ -9,13 +18,20 @@ class StorageManager {
         }
     }
 
-    // Retrieve data from localStorage
     static getFromLocalStorage(key, defaultValue = '') {
         try {
             return localStorage.getItem(key) || defaultValue;
         } catch (e) {
             console.error("Could not retrieve from localStorage: ", e);
             return defaultValue;
+        }
+    }
+
+    static removeFromLocalStorage(key) {
+        try {
+            localStorage.removeItem(key);
+        } catch (e) {
+            console.error("Could not remove from localStorage: ", e);
         }
     }
 }
@@ -49,7 +65,7 @@ class KeyboardShortcutManager {
                 ctx.drawImage(img, 0, 0);
             };
             img.src = lastState;
-            StorageManager.saveToLocalStorage('canvasState', this.canvasElement.toDataURL());
+            StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, this.canvasElement.toDataURL());
         }
     }
 
@@ -65,7 +81,7 @@ class KeyboardShortcutManager {
                 ctx.drawImage(img, 0, 0);
             };
             img.src = lastState;
-            StorageManager.saveToLocalStorage('canvasState', this.canvasElement.toDataURL());
+            StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, this.canvasElement.toDataURL());
         }
     }
 
@@ -79,27 +95,6 @@ class KeyboardShortcutManager {
                 event.preventDefault();
                 this.redo(); // Perform redo action
             }
-        }
-    }
-}
-
-// DOMButtonManager Class: Handles DOM button events
-class DOMButtonManager {
-    constructor(buttonId, action) {
-        this.button = document.getElementById(buttonId);
-        this.action = action; // The action to perform when the button is clicked
-
-        this.setupEventListener();
-    }
-
-    // Set up the event listener for the button
-    setupEventListener() {
-        if (this.button) {
-            this.button.addEventListener('click', () => {
-                this.action(); // Perform the action when the button is clicked
-            });
-        } else {
-            console.error(`Button with id "${this.button.id}" not found.`);
         }
     }
 }
@@ -137,6 +132,111 @@ class TouchManager {
     }
 }
 
+// TabManager Class: Handles multi-sheet functionality
+class TabManager {
+    static activeTabId = 'tab-1';
+    static tabCounter = 1;
+    static tabList = [];
+    static canvasInstance = null; // Reference to the ScribbleCanvas instance
+
+    static initialize(canvasInstance) {
+        this.canvasInstance = canvasInstance;
+        this.tabContainer = document.getElementById('tab-container');
+        this.addTabBtn = document.getElementById('add-tab-btn');
+
+        this.addTabBtn.addEventListener('click', () => this.addTab());
+        this.loadTabsFromStorage();
+        if (this.tabList.length === 0) {
+            this.addTab(); // Add a default tab if none exist
+        } else {
+            this.switchToTab(this.activeTabId);
+        }
+    }
+
+    static loadTabsFromStorage() {
+        const storedTabs = StorageManager.getFromLocalStorage('scribbler_tabs');
+        if (storedTabs) {
+            this.tabList = JSON.parse(storedTabs);
+            const storedActiveTab = StorageManager.getFromLocalStorage('scribbler_activeTabId', this.tabList[0].id);
+            this.activeTabId = storedActiveTab;
+            this.tabList.forEach(tab => this.renderTab(tab));
+        }
+    }
+
+    static saveTabsToStorage() {
+        StorageManager.saveToLocalStorage('scribbler_tabs', JSON.stringify(this.tabList));
+        StorageManager.saveToLocalStorage('scribbler_activeTabId', this.activeTabId);
+    }
+
+    static addTab() {
+        const newTabId = `tab-${this.tabCounter++}`;
+        const newTab = {
+            id: newTabId,
+            title: `Sheet ${this.tabCounter - 1}`,
+        };
+        this.tabList.push(newTab);
+        this.renderTab(newTab);
+        this.switchToTab(newTabId);
+        this.saveTabsToStorage();
+    }
+
+    static renderTab(tab) {
+        const tabElement = document.createElement('div');
+        tabElement.classList.add('tab');
+        tabElement.id = tab.id;
+        tabElement.innerHTML = `
+            <span class="tab-title">${tab.title}</span>
+            <button class="tab-close-btn">&times;</button>
+        `;
+        this.tabContainer.appendChild(tabElement);
+
+        tabElement.addEventListener('click', (e) => {
+            if (e.target.classList.contains('tab-close-btn')) {
+                e.stopPropagation();
+                this.removeTab(tab.id);
+            } else {
+                this.switchToTab(tab.id);
+            }
+        });
+    }
+
+    static switchToTab(tabId) {
+        if (this.activeTabId) {
+            const currentActiveTab = document.getElementById(this.activeTabId);
+            if (currentActiveTab) {
+                currentActiveTab.classList.remove('active');
+            }
+        }
+        
+        const newActiveTab = document.getElementById(tabId);
+        if (newActiveTab) {
+            newActiveTab.classList.add('active');
+            this.activeTabId = tabId;
+            this.canvasInstance.loadCanvasState();
+            this.saveTabsToStorage();
+        }
+    }
+
+    static removeTab(tabId) {
+        if (this.tabList.length === 1) {
+            alert("Cannot delete the last sheet.");
+            return;
+        }
+
+        const tabToRemove = document.getElementById(tabId);
+        tabToRemove.remove();
+        this.tabList = this.tabList.filter(tab => tab.id !== tabId);
+        StorageManager.removeFromLocalStorage(`canvasState_${tabId}`);
+
+        if (this.activeTabId === tabId) {
+            const newActiveTabId = this.tabList[this.tabList.length - 1].id;
+            this.switchToTab(newActiveTabId);
+        } else {
+            this.saveTabsToStorage();
+        }
+    }
+}
+
 class ScribbleCanvas {
     constructor(canvasId, clearButtonId) {
         this.canvas = document.getElementById(canvasId);
@@ -144,34 +244,54 @@ class ScribbleCanvas {
         this.drawing = false;
         this.points = [];
         
-        // Call resizeCanvas() here to set initial canvas dimensions
+        this.resizeCanvas = debounce(this._resizeCanvas.bind(this), 200);
         this.resizeCanvas();
-        window.addEventListener('resize', () => this.resizeCanvas());
-
-        // Initialize KeyboardShortcutManager with the canvas element
+        window.addEventListener('resize', this.resizeCanvas);
+        
         this.keyboardShortcutManager = new KeyboardShortcutManager(this.canvas);
         
-        // Load the saved canvas state from localStorage
-        const savedState = StorageManager.getFromLocalStorage('canvasState', '');
-        if (savedState) {
-            const img = new Image();
-            img.onload = () => {
-                this.ctx.drawImage(img, 0, 0);
-            };
-            img.src = savedState;
-        }
-
         this.setupCanvas();
         this.setupControls();
         this.attachEventListeners(clearButtonId);
 
-        // Initialize TouchManager with touch handling callbacks
         this.touchManager = new TouchManager(this.canvas, 
             (x, y) => this.startDrawing(x, y), 
             (x, y) => this.draw(x, y), 
             () => this.stopDrawing()
         );
-        this.touchManager.attachTouchEvents(); // Attach touch events to the canvas
+        this.touchManager.attachTouchEvents();
+    }
+
+    // Load the canvas state from localStorage for the active tab
+    loadCanvasState() {
+        const savedState = StorageManager.getFromLocalStorage('canvasState_' + TabManager.activeTabId, '');
+        if (savedState) {
+            const img = new Image();
+            img.onload = () => {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.drawImage(img, 0, 0);
+            };
+            img.src = savedState;
+        } else {
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        }
+    }
+
+    // Resize the canvas to fit the window
+    _resizeCanvas() {
+        const sidebar = document.querySelector('.controls-sidebar');
+        const bottomControls = document.querySelector('.bottom-controls');
+        const header = document.getElementById('header');
+        const tabBar = document.getElementById('tab-bar');
+
+        const sidebarWidth = sidebar ? sidebar.offsetWidth : 0;
+        const bottomControlsHeight = bottomControls ? bottomControls.offsetHeight : 0;
+        const headerHeight = header ? header.offsetHeight : 0;
+        const tabBarHeight = tabBar ? tabBar.offsetHeight : 0;
+
+        this.canvas.width = window.innerWidth - sidebarWidth;
+        this.canvas.height = window.innerHeight - bottomControlsHeight - headerHeight - tabBarHeight;
+        this.loadCanvasState(); // Reload the canvas content after resizing
     }
 
     // Set up canvas properties and resize functionality
@@ -180,16 +300,6 @@ class ScribbleCanvas {
         this.ctx.lineJoin = 'round';
         this.ctx.lineWidth = 5;
         this.ctx.strokeStyle = '#000';
-    }
-
-    // Function to generate a random hex color
-    getRandomColor() {
-        const letters = '0123456789ABCDEF';
-        let color = '#';
-        for (let i = 0; i < 6; i++) {
-            color += letters[Math.floor(Math.random() * 16)];
-        }
-        return color;
     }
 
     // Setup color palette and brush size controls
@@ -204,7 +314,6 @@ class ScribbleCanvas {
             '#90EE90', '#F4A460', '#BA55D3', '#DAA520', '#C71585', '#00BFFF'
         ];
 
-        // Generate the color grid
         colors.forEach(color => {
             const colorBox = document.createElement('div');
             colorBox.classList.add('color-box');
@@ -219,12 +328,10 @@ class ScribbleCanvas {
             });
         });
 
-        // Set initial active color
         if (document.querySelector('.color-box[data-color="#000000"]')) {
             document.querySelector('.color-box[data-color="#000000"]').classList.add('active');
         }
 
-        // Brush size slider
         const brushSizeSlider = document.getElementById('brushSizeSlider');
         const brushSizeValue = document.getElementById('brushSizeValue');
         
@@ -235,51 +342,34 @@ class ScribbleCanvas {
         });
     }
 
-    // Resize the canvas to fit the window
-    resizeCanvas() {
-        const sidebar = document.querySelector('.controls-sidebar');
-        const bottomControls = document.querySelector('.bottom-controls');
-        const sidebarWidth = sidebar ? sidebar.offsetWidth : 0;
-        const bottomControlsHeight = bottomControls ? bottomControls.offsetHeight : 0;
-        
-        this.canvas.width = window.innerWidth - sidebarWidth;
-        this.canvas.height = window.innerHeight - bottomControlsHeight;
-    }
-
     // Save the current state to undo stack
     saveState() {
-        this.keyboardShortcutManager.saveState(); // Save the current state to the undo stack
+        this.keyboardShortcutManager.saveState();
     }
 
-    // Start drawing
     startDrawing(x, y) {
         this.drawing = true;
-        this.points = [{ x, y }]; // Start tracking points
-        this.saveState(); // Save the canvas state before drawing
+        this.points = [{ x, y }];
+        this.saveState();
     }
 
-    // Stop drawing
     stopDrawing() {
         if (this.drawing) {
             this.drawing = false;
-            this.points = []; // Reset points for the next stroke
-            StorageManager.saveToLocalStorage('canvasState', this.canvas.toDataURL()); // Save the final stroke to localStorage
+            this.points = [];
+            StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, this.canvas.toDataURL());
         }
     }
 
-    // Draw on the canvas
     draw(x, y) {
         if (!this.drawing) return;
 
-        // Add the new point
         this.points.push({ x, y });
 
-        // If we have enough points, start drawing
         if (this.points.length >= 2) {
             this.ctx.beginPath();
             this.ctx.moveTo(this.points[0].x, this.points[0].y);
 
-            // Create a smooth curve
             for (let i = 1; i < this.points.length - 1; i++) {
                 const midPoint = {
                     x: (this.points[i].x + this.points[i + 1].x) / 2,
@@ -288,7 +378,6 @@ class ScribbleCanvas {
                 this.ctx.quadraticCurveTo(this.points[i].x, this.points[i].y, midPoint.x, midPoint.y);
             }
 
-            // Connect to the latest point
             const lastPoint = this.points[this.points.length - 2];
             const lastMidPoint = {
                 x: (lastPoint.x + x) / 2,
@@ -296,12 +385,10 @@ class ScribbleCanvas {
             };
             this.ctx.quadraticCurveTo(lastPoint.x, lastPoint.y, lastMidPoint.x, lastMidPoint.y);
 
-            // Stroke the path
             this.ctx.stroke();
         }
     }
 
-    // Attach event listeners for mouse, keyboard events, and clear button
     attachEventListeners(clearButtonId) {
         this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e.offsetX, e.offsetY));
         this.canvas.addEventListener('mousemove', (e) => this.draw(e.offsetX, e.offsetY));
@@ -310,13 +397,29 @@ class ScribbleCanvas {
 
         document.addEventListener('keydown', (e) => this.keyboardShortcutManager.handleKeyboardShortcuts(e));
 
-        // Clear canvas button
         document.getElementById(clearButtonId).addEventListener('click', () => {
-            this.saveState(); // Save current state before clearing
+            this.saveState();
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            StorageManager.saveToLocalStorage('canvasState', ''); // Clear stored state in localStorage
+            StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, '');
         });
     }
 }
-// Initialize the ScribbleCanvas class with the KeyboardShortcutManager
-const scribbleCanvas = new ScribbleCanvas('scribbleCanvas', 'clearButton');
+
+// Dark Mode Switcher
+const darkModeToggle = document.getElementById('darkModeToggle');
+darkModeToggle.addEventListener('change', () => {
+    document.body.classList.toggle('dark-mode');
+    StorageManager.saveToLocalStorage('darkMode', darkModeToggle.checked);
+});
+
+// Initial dark mode check
+if (StorageManager.getFromLocalStorage('darkMode') === 'true') {
+    darkModeToggle.checked = true;
+    document.body.classList.add('dark-mode');
+}
+
+// Initialize the application
+document.addEventListener("DOMContentLoaded", () => {
+    const scribbleCanvas = new ScribbleCanvas('scribbleCanvas', 'clearButton');
+    TabManager.initialize(scribbleCanvas);
+});

@@ -7,7 +7,22 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
+    <div id="header">
+        <div class="dark-mode-toggle">
+            <label class="switch">
+                <input type="checkbox" id="darkModeToggle">
+                <span class="slider round"></span>
+            </label>
+        </div>
+        <div id="app-title">Scribbler</div>
+    </div>
+
+    <div id="tab-bar">
+        <div id="tab-container"></div>
+        <button id="add-tab-btn" title="Add New Sheet">+</button>
+    </div>
+
+    <div class="main-content-wrapper">
         <div class="controls-sidebar">
             <div class="brush-size-control">
                 <label for="brushSizeSlider">Brush Size:</label>
