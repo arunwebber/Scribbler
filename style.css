@@ -181,6 +181,17 @@ body.dark-mode .tab.active {
     white-space: nowrap;
 }
 
+.edit-title {
+    border: none;
+    outline: none;
+    background-color: transparent;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    width: 100%;
+    padding: 0;
+}
+
 .tab-close-btn {
     margin-left: 8px;
     background: none;
@@ -216,7 +227,6 @@ body.dark-mode .tab.active {
 #add-tab-btn:hover {
     background-color: #218838; /* A slightly darker green for hover effect */
 }
-
 
 /* --- Main Content Layout --- */
 .main-content-wrapper {
@@ -331,20 +341,52 @@ body.dark-mode #clearButton {
 
 #footer {
     padding: 5px 10px;
-    background-color: var(--bg-light);
-    border-top: 1px solid var(--border-light);
-    text-align: center;
-    font-size: 12px;
-    font-weight: bold;
-    color: var(--text-light);
-    line-height: 1;
-    overflow: hidden;
-    white-space: nowrap;
+    background-color: #f0f0f0; /* Light gray background */
+    border-top: 1px solid #e0e0e0; /* Light gray border */
+    display: flex;
+    justify-content: space-between; /* Distribute items with space between */
+    align-items: center;
     flex-shrink: 0;
+    font-size: 0.8em;
+    color: #555;
 }
 
 body.dark-mode #footer {
-    background-color: var(--element-bg-dark);
-    border-color: var(--border-dark);
-    color: var(--text-dark);
+    background-color: #333; /* Darker gray for dark mode footer */
+    border-color: #444;
+    color: #bbb;
+}
+
+#footer-info {
+    flex-grow: 1;
+    text-align: left;
+}
+
+#footer-info a {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+#footer-info a:hover {
+    text-decoration: underline;
+}
+
+#footer-buttons {
+    display: flex;
+    gap: 10px; /* Space between buttons */
+}
+
+#footer-buttons button {
+    background-color: #6c757d; /* Dark gray for buttons */
+    color: white;
+    border: none;
+    padding: 5px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background-color 0.2s;
+}
+
+#footer-buttons button:hover {
+    background-color: #5a6268; /* Slightly darker gray on hover */
 }

@@ -158,7 +158,7 @@ class TabManager {
             this.tabList = JSON.parse(storedTabs);
             const storedActiveTab = StorageManager.getFromLocalStorage('scribbler_activeTabId', this.tabList[0].id);
             this.activeTabId = storedActiveTab;
-            this.tabList.forEach(tab => this.renderTab(tab));
+            this.renderTabs();
         }
     }
 
@@ -182,21 +182,22 @@ class TabManager {
             title: this.generateUniqueTabTitle(),
         };
         this.tabList.push(newTab);
-        this.renderTab(newTab);
+        this.renderTabs();
         this.switchToTab(newTabId);
-        this.saveTabsToStorage();
     }
 
     static renderTab(tab) {
         const tabElement = document.createElement('div');
         tabElement.classList.add('tab');
         tabElement.id = tab.id;
-        
+        if (tab.id === this.activeTabId) {
+            tabElement.classList.add('active');
+        }
+
         const titleSpan = document.createElement('span');
         titleSpan.classList.add('tab-title');
         titleSpan.textContent = tab.title;
 
-        // Double-click event listener for renaming
         titleSpan.ondblclick = (e) => {
             e.stopPropagation();
             const input = document.createElement('input');
@@ -214,7 +215,8 @@ class TabManager {
                     existingTab.title = newTitle;
                     this.saveTabsToStorage();
                 }
-                this.renderTabs(); // Re-render all tabs to show the new title
+                titleSpan.textContent = newTitle;
+                tabElement.replaceChild(titleSpan, input);
             };
 
             input.addEventListener('blur', saveTitle);
@@ -238,7 +240,7 @@ class TabManager {
         this.tabContainer.appendChild(tabElement);
         
         tabElement.addEventListener('click', (e) => {
-            if (!e.target.classList.contains('tab-close-btn')) {
+            if (!e.target.classList.contains('tab-close-btn') && !e.target.classList.contains('edit-title')) {
                 this.switchToTab(tab.id);
             }
         });
@@ -247,7 +249,6 @@ class TabManager {
     static renderTabs() {
         this.tabContainer.innerHTML = '';
         this.tabList.forEach(tab => this.renderTab(tab));
-        this.switchToTab(this.activeTabId);
     }
 
     static switchToTab(tabId) {
@@ -438,6 +439,66 @@ class ScribbleCanvas {
         }
     }
 
+    // Function to download the canvas as an image
+    downloadCanvas() {
+        const url = this.canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `scribbler_drawing_${TabManager.activeTabId}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+    
+    // Function to upload and draw an image on the canvas
+    uploadImage() {
+        const fileInput = document.getElementById('image-upload');
+        fileInput.click(); // Trigger the hidden file input click
+
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    this.saveState();
+                    // Draw the uploaded image on the canvas, scaling to fit
+                    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                    const hRatio = this.canvas.width / img.width;
+                    const vRatio = this.canvas.height / img.height;
+                    const ratio = Math.min(hRatio, vRatio);
+                    const centerShift_x = (this.canvas.width - img.width * ratio) / 2;
+                    const centerShift_y = (this.canvas.height - img.height * ratio) / 2;
+                    this.ctx.drawImage(img, 0, 0, img.width, img.height, centerShift_x, centerShift_y, img.width * ratio, img.height * ratio);
+                    StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, this.canvas.toDataURL());
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        };
+    }
+    
+    // Function to print the canvas content
+    printCanvas() {
+        const dataUrl = this.canvas.toDataURL('image/png');
+        const windowContent = `<!DOCTYPE html>
+            <html>
+                <head>
+                    <title>Scribbler Print</title>
+                </head>
+                <body>
+                    <img src="${dataUrl}" style="max-width: 100%;">
+                </body>
+            </html>`;
+        const printWindow = window.open('', '', 'height=600,width=800');
+        printWindow.document.write(windowContent);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+    }
+
     attachEventListeners(clearButtonId) {
         this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e.offsetX, e.offsetY));
         this.canvas.addEventListener('mousemove', (e) => this.draw(e.offsetX, e.offsetY));
@@ -451,6 +512,10 @@ class ScribbleCanvas {
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
             StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, '');
         });
+
+        document.getElementById('downloadBtn').addEventListener('click', () => this.downloadCanvas());
+        document.getElementById('uploadBtn').addEventListener('click', () => this.uploadImage());
+        document.getElementById('printBtn').addEventListener('click', () => this.printCanvas());
     }
 }
 
