@@ -309,11 +309,12 @@ body.dark-mode .color-box {
     flex-grow: 1;
     border: none;
     cursor: crosshair;
-    background-color: var(--bg-light);
+    background-color: transparent; /* Change from var(--bg-light) to transparent */
+    position: relative;
 }
 
 body.dark-mode #scribbleCanvas {
-    background-color: var(--bg-dark);
+    background-color: transparent; /* Change from var(--bg-dark) to transparent */
 }
 
 #clearButton {
@@ -407,8 +408,8 @@ body.dark-mode #footer {
     left: 0;
     width: 100%;
     height: 100%;
-    pointer-events: none; /* This should remain none by default */
-    z-index: 5;
+    pointer-events: none;
+    z-index: 1; /* Images below canvas */
 }
 
 .image-container {
@@ -464,4 +465,74 @@ body.dark-mode #footer {
     bottom: -6px;
     right: -6px;
     cursor: nwse-resize;
+}
+
+/* Multiple Image Support - Add these new styles */
+.image-container {
+    position: absolute;
+    cursor: grab;
+    user-select: none;
+    pointer-events: auto;
+    box-sizing: content-box;
+    border: 2px solid transparent; /* Add transparent border */
+    transition: border-color 0.2s; /* Add transition */
+}
+
+.image-container.selected {
+    border-color: var(--primary-color);
+}
+
+.image-container.dragging {
+    cursor: grabbing !important;
+    z-index: 10; /* This already exists - keep it */
+}
+
+/* Delete button for images */
+.image-delete-btn {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    width: 24px;
+    height: 24px;
+    background: #ff4444;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    display: none;
+    z-index: 10;
+    padding: 0;
+    text-align: center;
+}
+
+.image-container.selected .image-delete-btn {
+    display: block;
+}
+
+body.dark-mode .image-delete-btn {
+    background: #cc0000;
+}
+
+.image-delete-btn:hover {
+    background: #ff0000;
+}
+
+/* Hide resize handles when not selected */
+.resize-handle {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: var(--primary-color);
+    border: 1px solid #fff;
+    border-radius: 50%;
+    opacity: 0; /* Change from 0.8 to 0 */
+    pointer-events: auto;
+    transition: opacity 0.2s; /* Add transition */
+}
+
+/* Show resize handles only on selected images */
+.image-container.selected .resize-handle {
+    opacity: 0.8;
 }

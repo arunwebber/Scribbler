@@ -132,7 +132,6 @@ class TouchManager {
     }
 }
 
-// ImageManager Class: Manages the uploaded, draggable, and resizable images
 class ImageManager {
     constructor(imageLayerId, activeTabId) {
         this.imageLayer = document.getElementById(imageLayerId);
@@ -140,7 +139,8 @@ class ImageManager {
         this.uploadButton = document.getElementById('uploadImageBtn');
         this.activeTabId = activeTabId;
 
-        this.currentImage = null;
+        this.images = []; // Store multiple images
+        this.currentImage = null; // Currently selected image
         this.isDragging = false;
         this.isResizing = false;
         this.activeHandle = null;
@@ -154,10 +154,11 @@ class ImageManager {
         this.setupEventListeners();
         this.loadImages();
     }
-    
+
     setActiveTab(tabId) {
         this.activeTabId = tabId;
         this.imageLayer.innerHTML = '';
+        this.images = [];
         this.currentImage = null;
         this.loadImages();
     }
@@ -165,12 +166,12 @@ class ImageManager {
     setupEventListeners() {
         this.uploadButton.addEventListener('click', () => this.imageInput.click());
         this.imageInput.addEventListener('change', (e) => this.handleImageUpload(e));
-        
+
         // Use the image layer for event delegation
         this.imageLayer.addEventListener('mousedown', (e) => this.handleMouseDown(e));
         document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         document.addEventListener('mouseup', () => this.handleMouseUp());
-        
+
         // Touch events for mobile
         this.imageLayer.addEventListener('touchstart', (e) => this.handleTouchStart(e), {passive: false});
         document.addEventListener('touchmove', (e) => this.handleTouchMove(e), {passive: false});
@@ -183,18 +184,18 @@ class ImageManager {
 
         const reader = new FileReader();
         reader.onload = (event) => {
-            if (this.currentImage) {
-                this.currentImage.remove();
-            }
+            // Generate unique ID for each image
+            const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             const imageData = {
+                id: imageId,
                 src: event.target.result,
-                left: 50,
-                top: 50,
+                left: 50 + (this.images.length * 20), // Offset each new image
+                top: 50 + (this.images.length * 20),
                 width: 200,
                 height: 'auto'
             };
             this.createImageElement(imageData);
-            this.saveImageState();
+            this.saveImagesState();
         };
         reader.readAsDataURL(file);
         this.imageInput.value = ''; // Reset input for same file upload
@@ -203,16 +204,17 @@ class ImageManager {
     createImageElement(imageData) {
         const container = document.createElement('div');
         container.classList.add('image-container');
+        container.dataset.imageId = imageData.id;
         container.style.left = `${imageData.left}px`;
         container.style.top = `${imageData.top}px`;
-        
+
         const img = document.createElement('img');
         img.src = imageData.src;
         img.draggable = false;
         img.style.width = `${imageData.width}px`;
         img.style.height = 'auto';
         img.style.pointerEvents = 'none'; // Prevent image from capturing events
-        
+
         container.appendChild(img);
 
         // Add resize handles
@@ -222,70 +224,139 @@ class ImageManager {
             container.appendChild(handle);
         });
 
-        this.imageLayer.appendChild(container);
-        this.currentImage = container;
+        // Add delete button
+        const deleteBtn = document.createElement('button');
+        deleteBtn.classList.add('image-delete-btn');
+        deleteBtn.innerHTML = '×';
+        deleteBtn.title = 'Delete image';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.deleteImage(imageData.id);
+        });
+        container.appendChild(deleteBtn);
 
-        // Wait for image to load to center it properly
+        this.imageLayer.appendChild(container);
+        
+        // Add to images array
+        this.images.push({
+            id: imageData.id,
+            element: container
+        });
+
+        // Set as current image
+        this.selectImage(container);
+
+        // Wait for image to load
         img.onload = () => {
-            this.centerImage();
-            this.saveImageState();
+            if (imageData.width === 200 && !imageData.height) { // New image, center it
+                this.centerImage(container);
+            }
+            this.saveImagesState();
         };
     }
 
-    centerImage() {
-        if (!this.currentImage) return;
-        const layerRect = this.imageLayer.getBoundingClientRect();
-        const imgRect = this.currentImage.getBoundingClientRect();
-        const newX = Math.max(0, (layerRect.width - imgRect.width) / 2);
-        const newY = Math.max(0, (layerRect.height - imgRect.height) / 2);
-        this.currentImage.style.left = `${newX}px`;
-        this.currentImage.style.top = `${newY}px`;
+    selectImage(container) {
+        // Deselect all images
+        this.imageLayer.querySelectorAll('.image-container').forEach(img => {
+            img.classList.remove('selected');
+        });
+        
+        // Select this image
+        container.classList.add('selected');
+        this.currentImage = container;
+        
+        // Bring to front
+        container.style.zIndex = this.getHighestZIndex() + 1;
     }
 
-    saveImageState() {
-        if (this.currentImage) {
-            const img = this.currentImage.querySelector('img');
-            const state = {
-                src: img.src,
-                left: this.currentImage.offsetLeft,
-                top: this.currentImage.offsetTop,
-                width: img.offsetWidth,
-                height: img.offsetHeight
-            };
-            StorageManager.saveToLocalStorage(`imageState_${this.activeTabId}`, JSON.stringify(state));
+    getHighestZIndex() {
+        let maxZ = 0;
+        this.imageLayer.querySelectorAll('.image-container').forEach(img => {
+            const z = parseInt(img.style.zIndex) || 0;
+            if (z > maxZ) maxZ = z;
+        });
+        return maxZ;
+    }
+
+    centerImage(container) {
+        if (!container) return;
+        const layerRect = this.imageLayer.getBoundingClientRect();
+        const imgRect = container.getBoundingClientRect();
+        const newX = Math.max(0, (layerRect.width - imgRect.width) / 2);
+        const newY = Math.max(0, (layerRect.height - imgRect.height) / 2);
+        container.style.left = `${newX}px`;
+        container.style.top = `${newY}px`;
+    }
+
+    deleteImage(imageId) {
+        const imageIndex = this.images.findIndex(img => img.id === imageId);
+        if (imageIndex > -1) {
+            this.images[imageIndex].element.remove();
+            this.images.splice(imageIndex, 1);
+            
+            if (this.currentImage && this.currentImage.dataset.imageId === imageId) {
+                this.currentImage = null;
+            }
+            
+            this.saveImagesState();
         }
     }
 
+    saveImagesState() {
+        const imagesData = [];
+        this.imageLayer.querySelectorAll('.image-container').forEach(container => {
+            const img = container.querySelector('img');
+            imagesData.push({
+                id: container.dataset.imageId,
+                src: img.src,
+                left: container.offsetLeft,
+                top: container.offsetTop,
+                width: img.offsetWidth,
+                height: img.offsetHeight,
+                zIndex: container.style.zIndex || 0
+            });
+        });
+        StorageManager.saveToLocalStorage(`imagesState_${this.activeTabId}`, JSON.stringify(imagesData));
+    }
+
     loadImages() {
-        const savedState = StorageManager.getFromLocalStorage(`imageState_${this.activeTabId}`);
+        const savedState = StorageManager.getFromLocalStorage(`imagesState_${this.activeTabId}`);
         if (savedState) {
             try {
-                const imageData = JSON.parse(savedState);
-                if (imageData && imageData.src) {
+                const imagesData = JSON.parse(savedState);
+                imagesData.forEach(imageData => {
                     this.createImageElement(imageData);
-                }
+                    if (imageData.zIndex) {
+                        const container = this.imageLayer.querySelector(`[data-image-id="${imageData.id}"]`);
+                        if (container) {
+                            container.style.zIndex = imageData.zIndex;
+                        }
+                    }
+                });
             } catch (e) {
-                console.error("Failed to parse image state:", e);
-                StorageManager.removeFromLocalStorage(`imageState_${this.activeTabId}`);
+                console.error("Failed to parse images state:", e);
+                StorageManager.removeFromLocalStorage(`imagesState_${this.activeTabId}`);
             }
         }
     }
 
     clearImages() {
         this.imageLayer.innerHTML = '';
+        this.images = [];
         this.currentImage = null;
-        StorageManager.removeFromLocalStorage(`imageState_${this.activeTabId}`);
+        StorageManager.removeFromLocalStorage(`imagesState_${this.activeTabId}`);
     }
 
     handleMouseDown(e) {
         const target = e.target;
-        
+
         if (target.classList.contains('resize-handle')) {
             e.preventDefault();
             e.stopPropagation();
             this.isResizing = true;
             this.activeHandle = target;
             this.currentImage = target.parentElement;
+            this.selectImage(this.currentImage);
             this.startX = e.clientX;
             this.startY = e.clientY;
             const img = this.currentImage.querySelector('img');
@@ -298,6 +369,7 @@ class ImageManager {
             e.stopPropagation();
             this.isDragging = true;
             this.currentImage = target.classList.contains('image-container') ? target : target.parentElement;
+            this.selectImage(this.currentImage);
             this.currentImage.classList.add('dragging');
             this.startX = e.clientX;
             this.startY = e.clientY;
@@ -309,7 +381,7 @@ class ImageManager {
     handleTouchStart(e) {
         const touch = e.touches[0];
         const target = document.elementFromPoint(touch.clientX, touch.clientY);
-        
+
         if (target && (target.classList.contains('image-container') || target.parentElement?.classList.contains('image-container'))) {
             e.preventDefault();
             const fakeMouseEvent = {
@@ -328,10 +400,10 @@ class ImageManager {
             e.preventDefault();
             const dx = e.clientX - this.startX;
             const dy = e.clientY - this.startY;
-            
+
             const newLeft = this.initialLeft + dx;
             const newTop = this.initialTop + dy;
-            
+
             this.currentImage.style.left = `${newLeft}px`;
             this.currentImage.style.top = `${newTop}px`;
         } else if (this.isResizing && this.currentImage) {
@@ -386,7 +458,7 @@ class ImageManager {
 
     handleMouseUp() {
         if (this.isDragging || this.isResizing) {
-            this.saveImageState();
+            this.saveImagesState();
         }
         if (this.currentImage) {
             this.currentImage.classList.remove('dragging');
