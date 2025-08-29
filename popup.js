@@ -2,12 +2,21 @@
 class StorageManager {
     // Save data to localStorage
     static saveToLocalStorage(key, value) {
-        localStorage.setItem(key, value);
+        try {
+            localStorage.setItem(key, value);
+        } catch (e) {
+            console.error("Could not save to localStorage: ", e);
+        }
     }
 
     // Retrieve data from localStorage
     static getFromLocalStorage(key, defaultValue = '') {
-        return localStorage.getItem(key) || defaultValue;
+        try {
+            return localStorage.getItem(key) || defaultValue;
+        } catch (e) {
+            console.error("Could not retrieve from localStorage: ", e);
+            return defaultValue;
+        }
     }
 }
 
@@ -254,6 +263,7 @@ class ScribbleCanvas {
         if (this.drawing) {
             this.drawing = false;
             this.points = []; // Reset points for the next stroke
+            StorageManager.saveToLocalStorage('canvasState', this.canvas.toDataURL()); // Save the final stroke to localStorage
         }
     }
 

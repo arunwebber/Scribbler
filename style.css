@@ -17,7 +17,7 @@ body, html {
 
 /* Sidebar for controls */
 .controls-sidebar {
-    width: 180px; /* New, more compact width */
+    width: 180px;
     background-color: #f0f0f0;
     border-right: 1px solid #ccc;
     padding: 10px;
@@ -25,7 +25,7 @@ body, html {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    overflow-y: hidden; /* This removes the scrollbar */
+    overflow-y: hidden;
 }
 
 /* Brush size slider styling */
@@ -48,13 +48,13 @@ body, html {
 /* Color palette grid styling */
 #colorPaletteGrid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr); /* Changed to 3 columns for a more compact look */
-    gap: 5px; /* Spacing between color boxes */
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
 }
 
 .color-box {
-    width: 35px; /* Adjusted size for the 3-column layout */
-    height: 35px; /* Adjusted size for the 3-column layout */
+    width: 35px;
+    height: 35px;
     border: 2px solid #ccc;
     cursor: pointer;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -109,11 +109,12 @@ body, html {
 
 /* Footer styling */
 #footer {
-    padding: 1px 3px;
+    padding: 5px 10px; /* Increased padding */
     background-color: #f0f0f0;
     border-top: 1px solid #ddd;
     text-align: center;
-    font-size: 9px;
+    font-size: 12px; /* Increased font size */
+    font-weight: bold; /* Added bold font weight */
     color: #333;
     line-height: 1;
     overflow: hidden;
