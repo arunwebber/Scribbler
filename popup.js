@@ -598,71 +598,70 @@ class Renderer {
         }
     }
 
-    downloadCanvas() {
+   downloadCanvas() {
         const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d');
         tempCanvas.width = this.mainCanvas.width;
         tempCanvas.height = this.mainCanvas.height;
-
-        const layers = App.layerManager.getLayers();
-        let loadedCount = 0;
-        const totalImages = layers.filter(l => l.type === 'image').length;
-        
-        const renderAndDownload = () => {
-             tempCtx.drawImage(this.mainCanvas, 0, 0);
-             if (this.isDrawing) {
-                tempCtx.drawImage(this.currentDrawingCanvas, 0, 0);
-             }
-             const url = tempCanvas.toDataURL('image/png');
-             const a = document.createElement('a');
-             a.href = url;
-             a.download = `scribbler_drawing_${TabManager.activeTabId}.png`;
-             document.body.appendChild(a);
-             a.click();
-             document.body.removeChild(a);
-        };
-
-        const checkAndDraw = () => {
-            loadedCount++;
-            if (loadedCount === totalImages) {
-                renderAndDownload();
-            }
-        };
-
-        layers.forEach(layer => {
-            const img = new Image();
-            img.onload = () => {
-                if (layer.type === 'image') {
-                    const layerHeight = this.getImageHeight(layer);
-                    tempCtx.drawImage(img, layer.x, layer.y, layer.width, layerHeight);
-                } else if (layer.type === 'drawing') {
-                    tempCtx.drawImage(img, 0, 0);
-                }
-                checkAndDraw();
-            };
-            img.src = layer.data;
-        });
-
-        if (totalImages === 0) {
-            renderAndDownload();
-        }
-    }
+        const tempCtx = tempCanvas.getContext('2d');
     
-    printCanvas() {
-        const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCanvas.width = this.mainCanvas.width;
-        tempCanvas.height = this.mainCanvas.height;
-        
         const layers = App.layerManager.getLayers();
         let loadedCount = 0;
-        const totalImages = layers.filter(l => l.type === 'image').length;
-
-        const renderAndPrint = () => {
-            tempCtx.drawImage(this.mainCanvas, 0, 0);
+        const totalLayers = layers.length;
+    
+        const renderAndDownload = () => {
+            // Draw the current, unsaved drawing stroke on top if it exists
             if (this.isDrawing) {
                 tempCtx.drawImage(this.currentDrawingCanvas, 0, 0);
             }
+    
+            const url = tempCanvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `scribbler_drawing_${TabManager.activeTabId}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        };
+    
+        if (totalLayers === 0) {
+            renderAndDownload();
+        } else {
+            layers.forEach(layer => {
+                const img = new Image();
+                img.onload = () => {
+                    if (layer.type === 'image') {
+                        const layerHeight = this.getImageHeight(layer);
+                        tempCtx.drawImage(img, layer.x, layer.y, layer.width, layerHeight);
+                    } else if (layer.type === 'drawing') {
+                        tempCtx.drawImage(img, 0, 0);
+                    }
+                    loadedCount++;
+                    if (loadedCount === totalLayers) {
+                        renderAndDownload();
+                    }
+                };
+                img.src = layer.data;
+            });
+        }
+    }
+    
+    // Add the corrected code for the printCanvas and downloadCanvas methods within the Renderer class
+    printCanvas() {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = this.mainCanvas.width;
+        tempCanvas.height = this.mainCanvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+    
+        const layers = App.layerManager.getLayers();
+        let loadedCount = 0;
+        const totalImages = layers.filter(l => l.type === 'image').length;
+    
+        const renderAndPrint = () => {
+            // Check if a current drawing exists and draw it onto the temp canvas
+            if (this.isDrawing) {
+                tempCtx.drawImage(this.currentDrawingCanvas, 0, 0);
+            }
+            
             const dataUrl = tempCanvas.toDataURL('image/png');
             const windowContent = `<!DOCTYPE html>
                 <html>
@@ -677,33 +676,42 @@ class Renderer {
             printWindow.document.write(windowContent);
             printWindow.document.close();
             printWindow.focus();
-            printWindow.print();
-            printWindow.close();
-        };
-
-        const checkAndDraw = () => {
-            loadedCount++;
-            if (loadedCount === totalImages) {
-                renderAndPrint();
-            }
-        };
-
-        layers.forEach(layer => {
-            const img = new Image();
+            
+            // Wait for the image to load in the new window before printing
+            const img = printWindow.document.querySelector('img');
             img.onload = () => {
-                if (layer.type === 'image') {
-                    const layerHeight = this.getImageHeight(layer);
-                    tempCtx.drawImage(img, layer.x, layer.y, layer.width, layerHeight);
-                } else if (layer.type === 'drawing') {
-                    tempCtx.drawImage(img, 0, 0);
-                }
-                checkAndDraw();
+                printWindow.print();
+                printWindow.close();
             };
-            img.src = layer.data;
-        });
-
+        };
+    
         if (totalImages === 0) {
             renderAndPrint();
+        } else {
+            layers.forEach(layer => {
+                if (layer.type === 'drawing') {
+                    const img = new Image();
+                    img.onload = () => {
+                        tempCtx.drawImage(img, 0, 0);
+                        loadedCount++;
+                        if (loadedCount === layers.length) {
+                            renderAndPrint();
+                        }
+                    };
+                    img.src = layer.data;
+                } else if (layer.type === 'image') {
+                    const img = new Image();
+                    img.onload = () => {
+                        const layerHeight = this.getImageHeight(layer);
+                        tempCtx.drawImage(img, layer.x, layer.y, layer.width, layerHeight);
+                        loadedCount++;
+                        if (loadedCount === layers.length) {
+                            renderAndPrint();
+                        }
+                    };
+                    img.src = layer.data;
+                }
+            });
         }
     }
 }
