@@ -36,93 +36,174 @@ class StorageManager {
     }
 }
 
-// KeyboardShortcutManager Class: Handles undo and redo functionality via keyboard shortcuts
-class KeyboardShortcutManager {
-    constructor(canvasElement) {
-        this.canvasElement = canvasElement;
+// LayerManager Class: Manages the stack of layers (drawings and images)
+class LayerManager {
+    constructor() {
+        this.layers = [];
+        this.activeLayer = null;
         this.undoStack = [];
         this.redoStack = [];
     }
 
-    // Save the current state to undo stack
-    saveState() {
-        this.undoStack.push(this.canvasElement.toDataURL());
-        if (this.undoStack.length > 50) {
-            this.undoStack.shift(); // Keep the stack size manageable
-        }
-        this.redoStack = []; // Clear redo stack after a new action
+    addLayer(layer) {
+        this.saveStateToHistory();
+        this.layers.push(layer);
+        this.saveState();
+        App.renderer.renderAllLayers();
     }
 
-    // Undo the last action
-    undo() {
-        if (this.undoStack.length > 0) {
-            const lastState = this.undoStack.pop();
-            this.redoStack.push(this.canvasElement.toDataURL());
-            const img = new Image();
-            img.onload = () => {
-                const ctx = this.canvasElement.getContext('2d');
-                ctx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
-                ctx.drawImage(img, 0, 0);
-            };
-            img.src = lastState;
-            StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, this.canvasElement.toDataURL());
-        }
+    addDrawingLayer(data) {
+        this.addLayer({
+            id: `drawing_${Date.now()}`,
+            type: 'drawing',
+            data: data
+        });
+        this.activeLayer = null;
     }
 
-    // Redo the last undone action
-    redo() {
-        if (this.redoStack.length > 0) {
-            const lastState = this.redoStack.pop();
-            this.undoStack.push(this.canvasElement.toDataURL());
-            const img = new Image();
-            img.onload = () => {
-                const ctx = this.canvasElement.getContext('2d');
-                ctx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
-                ctx.drawImage(img, 0, 0);
-            };
-            img.src = lastState;
-            StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, this.canvasElement.toDataURL());
-        }
+    addImageLayer(data) {
+        const newLayer = {
+            id: `image_${Date.now()}`,
+            type: 'image',
+            data: data,
+            x: 50,
+            y: 50,
+            width: 200,
+            height: 'auto'
+        };
+        this.addLayer(newLayer);
+        this.setActiveLayer(newLayer);
     }
 
-    // Handle keyboard shortcuts for undo and redo
-    handleKeyboardShortcuts(event) {
-        if (event.ctrlKey) {
-            if (event.key === 'z' || event.key === 'Z') {
-                event.preventDefault();
-                this.undo(); // Perform undo action
-            } else if (event.key === 'y' || event.key === 'Y') {
-                event.preventDefault();
-                this.redo(); // Perform redo action
+    getLayers() {
+        return this.layers;
+    }
+
+    removeLayer(layerId) {
+        this.saveStateToHistory();
+        this.layers = this.layers.filter(layer => layer.id !== layerId);
+        this.activeLayer = null;
+        this.saveState();
+        App.renderer.renderAllLayers();
+        App.renderer.renderActiveState();
+    }
+
+    clearLayers() {
+        this.saveStateToHistory();
+        this.layers = [];
+        this.activeLayer = null;
+        this.saveState();
+        App.renderer.renderAllLayers();
+        App.renderer.renderActiveState();
+    }
+
+    setActiveLayer(layer) {
+        this.activeLayer = layer;
+        App.renderer.renderActiveState();
+    }
+
+    getLayerAt(x, y) {
+        for (let i = this.layers.length - 1; i >= 0; i--) {
+            const layer = this.layers[i];
+            if (layer.type === 'image') {
+                const img = new Image();
+                img.src = layer.data;
+                const layerWidth = layer.width;
+                const layerHeight = App.renderer.getImageHeight(layer);
+                if (x >= layer.x && x <= layer.x + layerWidth && y >= layer.y && y <= layer.y + layerHeight) {
+                    if (this.activeLayer !== layer) {
+                        this.setActiveLayer(layer);
+                        this.saveStateToHistory();
+                        // Bring the selected image to the top of the stack
+                        if (this.layers.length > 1 && i !== this.layers.length - 1) {
+                            const [selectedLayer] = this.layers.splice(i, 1);
+                            this.layers.push(selectedLayer);
+                            this.saveState();
+                            App.renderer.renderAllLayers();
+                        }
+                    }
+                    return layer;
+                }
+            }
+        }
+        this.setActiveLayer(null);
+        return null;
+    }
+
+    saveStateToHistory() {
+        if (JSON.stringify(this.layers) !== JSON.stringify(this.undoStack[this.undoStack.length - 1])) {
+            this.undoStack.push(JSON.parse(JSON.stringify(this.layers)));
+            this.redoStack = []; // Clear redo stack on new action
+            if (this.undoStack.length > 50) { // Limit history to 50 states
+                this.undoStack.shift();
             }
         }
     }
+
+    undo() {
+        if (this.undoStack.length > 0) {
+            this.redoStack.push(JSON.parse(JSON.stringify(this.layers)));
+            const prevState = this.undoStack.pop();
+            this.layers = prevState;
+            this.activeLayer = null;
+            this.saveState();
+            App.renderer.renderAllLayers();
+            App.renderer.renderActiveState();
+        }
+    }
+
+    redo() {
+        if (this.redoStack.length > 0) {
+            this.undoStack.push(JSON.parse(JSON.stringify(this.layers)));
+            const nextState = this.redoStack.pop();
+            this.layers = nextState;
+            this.activeLayer = null;
+            this.saveState();
+            App.renderer.renderAllLayers();
+            App.renderer.renderActiveState();
+        }
+    }
+
+    saveState() {
+        StorageManager.saveToLocalStorage(`layersState_${TabManager.activeTabId}`, JSON.stringify(this.layers));
+    }
+
+    loadState() {
+        const savedState = StorageManager.getFromLocalStorage(`layersState_${TabManager.activeTabId}`);
+        if (savedState) {
+            try {
+                this.layers = JSON.parse(savedState);
+            } catch (e) {
+                console.error("Failed to parse layers state:", e);
+                this.layers = [];
+            }
+        } else {
+            this.layers = [];
+        }
+        this.activeLayer = null;
+        this.undoStack = [JSON.parse(JSON.stringify(this.layers))];
+        this.redoStack = [];
+        App.renderer.renderAllLayers();
+        App.renderer.renderActiveState();
+    }
 }
 
+// ToolManager Class: Manages the active tool (brush or pointer)
 class ToolManager {
-    constructor(canvas, imageManager) {
+    constructor() {
         this.activeTool = 'brush'; // Default tool
-        this.canvas = canvas;
-        this.imageManager = imageManager;
         this.toolButtons = {
             brush: document.getElementById('brushTool'),
             pointer: document.getElementById('pointerTool')
         };
         this.setupEventListeners();
-    }
-
-    setupEventListeners() {
-        this.toolButtons.brush.addEventListener('click', () => this.setTool('brush'));
-        this.toolButtons.pointer.addEventListener('click', () => this.setTool('pointer'));
+        this.updateToolButtons();
     }
 
     setTool(tool) {
-        if (this.activeTool === tool) return;
-
         this.activeTool = tool;
         this.updateToolButtons();
         this.updateCanvasCursor();
-        this.imageManager.deselectAllImages();
     }
 
     updateToolButtons() {
@@ -136,477 +217,494 @@ class ToolManager {
     }
 
     updateCanvasCursor() {
+        const mainCanvas = document.getElementById('mainCanvas');
         if (this.activeTool === 'brush') {
-            this.canvas.classList.remove('pointer-mode');
-            this.canvas.style.pointerEvents = 'auto'; // Canvas captures events for drawing
-            // Disable pointer events on image containers when in brush mode
-            document.querySelectorAll('.image-container').forEach(container => {
-                container.style.pointerEvents = 'none';
-            });
+            mainCanvas.style.cursor = 'crosshair';
         } else {
-            this.canvas.classList.add('pointer-mode');
-            this.canvas.style.pointerEvents = 'none'; // Canvas doesn't capture events
-            // Enable pointer events on image containers when in pointer mode
-            document.querySelectorAll('.image-container').forEach(container => {
-                container.style.pointerEvents = 'auto';
-            });
+            mainCanvas.style.cursor = 'default';
         }
-    }
-}
-
-class TouchManager {
-    constructor(canvas, startDrawingCallback, drawCallback, stopDrawingCallback) {
-        this.canvas = canvas;
-        this.startDrawingCallback = startDrawingCallback;
-        this.drawCallback = drawCallback;
-        this.stopDrawingCallback = stopDrawingCallback;
-    }
-
-    // Handle touch start events
-    handleTouchStart(e) {
-        e.preventDefault(); // Prevent scrolling
-        const touch = e.touches[0];
-        const rect = this.canvas.getBoundingClientRect();
-        this.startDrawingCallback(touch.clientX - rect.left, touch.clientY - rect.top);
-    }
-
-    // Handle touch move events
-    handleTouchMove(e) {
-        e.preventDefault(); // Prevent scrolling
-        const touch = e.touches[0];
-        const rect = this.canvas.getBoundingClientRect();
-        this.drawCallback(touch.clientX - rect.left, touch.clientY - rect.top);
-    }
-
-    // Attach touch event listeners to the canvas
-    attachTouchEvents() {
-        this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e));
-        this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e));
-        this.canvas.addEventListener('touchend', () => this.stopDrawing());
-        this.canvas.addEventListener('touchcancel', () => this.stopDrawing());
-    }
-}
-
-class ImageManager {
-    constructor(imageLayerId, activeTabId) {
-        this.imageLayer = document.getElementById(imageLayerId);
-        this.imageInput = document.getElementById('image-upload');
-        this.uploadButton = document.getElementById('uploadImageBtn');
-        this.activeTabId = activeTabId;
-
-        this.images = []; // Store multiple images
-        this.currentImage = null; // Currently selected image
-        this.isDragging = false;
-        this.isResizing = false;
-        this.activeHandle = null;
-        this.startX = 0;
-        this.startY = 0;
-        this.initialWidth = 0;
-        this.initialHeight = 0;
-        this.initialLeft = 0;
-        this.initialTop = 0;
-
-        this.imageDrawings = new Map();
-        this.imageCanvases = new Map(); // Add this - store canvas for each image
-
-        this.setupEventListeners();
-        this.loadImages();
-    }
-
-    setActiveTab(tabId) {
-        this.activeTabId = tabId;
-        this.imageLayer.innerHTML = '';
-        this.images = [];
-        this.currentImage = null;
-        this.loadImages();
     }
 
     setupEventListeners() {
-        this.uploadButton.addEventListener('click', () => this.imageInput.click());
-        this.imageInput.addEventListener('change', (e) => this.handleImageUpload(e));
-
-        // Use the image layer for event delegation
-        this.imageLayer.addEventListener('mousedown', (e) => this.handleMouseDown(e));
-        document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-        document.addEventListener('mouseup', () => this.handleMouseUp());
-
-        // Touch events for mobile
-        this.imageLayer.addEventListener('touchstart', (e) => this.handleTouchStart(e), {passive: false});
-        document.addEventListener('touchmove', (e) => this.handleTouchMove(e), {passive: false});
-        document.addEventListener('touchend', () => this.handleMouseUp());
+        this.toolButtons.brush.addEventListener('click', () => this.setTool('brush'));
+        this.toolButtons.pointer.addEventListener('click', () => this.setTool('pointer'));
     }
+}
 
-    handleImageUpload(e) {
-        const file = e.target.files[0];
-        if (!file) return;
+// InteractionManager Class: Handles mouse/touch events for dragging and resizing
+class InteractionManager {
+    constructor(overlayCanvas, layerManager, renderer) {
+        this.overlayCanvas = overlayCanvas;
+        this.layerManager = layerManager;
+        this.renderer = renderer;
+        this.isDragging = false;
+        this.isResizing = false;
+        this.dragStart = { x: 0, y: 0 };
+        this.resizeHandle = null;
 
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            // Generate unique ID for each image
-            const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            const imageData = {
-                id: imageId,
-                src: event.target.result,
-                left: 50 + (this.images.length * 20), // Offset each new image
-                top: 50 + (this.images.length * 20),
-                width: 200,
-                height: 'auto',
-                drawingData: null
-            };
-            this.createImageElement(imageData);
-            this.saveImagesState();
-        };
-        reader.readAsDataURL(file);
-        this.imageInput.value = ''; // Reset input for same file upload
-    }
+        this.overlayCanvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
+        this.overlayCanvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
+        this.overlayCanvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
+        this.overlayCanvas.addEventListener('mouseleave', this.handleMouseUp.bind(this));
 
-    createImageElement(imageData) {
-        const container = document.createElement('div');
-        container.classList.add('image-container');
-        container.dataset.imageId = imageData.id;
-        container.style.left = `${imageData.left}px`;
-        container.style.top = `${imageData.top}px`;
-
-        const img = document.createElement('img');
-        img.src = imageData.src;
-        img.draggable = false;
-        img.style.width = `${imageData.width}px`;
-        img.style.height = 'auto';
-        img.style.pointerEvents = 'none'; // Prevent image from capturing events
-
-    // Create a canvas for this image's drawings
-        const drawingCanvas = document.createElement('canvas');
-        drawingCanvas.style.position = 'absolute';
-        drawingCanvas.style.top = '0';
-        drawingCanvas.style.left = '0';
-        drawingCanvas.style.width = '100%';
-        drawingCanvas.style.height = '100%';
-        drawingCanvas.style.pointerEvents = 'none';
-        drawingCanvas.style.zIndex = '1';
-        
-        container.appendChild(img);
-        container.appendChild(drawingCanvas); // Add the drawing canvas
-
-        // Add resize handles
-        ['tl', 'tr', 'bl', 'br'].forEach(pos => {
-            const handle = document.createElement('div');
-            handle.classList.add('resize-handle', pos);
-            container.appendChild(handle);
-        });
-
-        // Add delete button
-        const deleteBtn = document.createElement('button');
-        deleteBtn.classList.add('image-delete-btn');
-        deleteBtn.innerHTML = '×';
-        deleteBtn.title = 'Delete image';
-        deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.deleteImage(imageData.id);
-        });
-        container.appendChild(deleteBtn);
-
-        this.imageLayer.appendChild(container);
-        
-        // Add to images array
-        this.images.push({
-            id: imageData.id,
-            element: container
-        });
-        this.imageCanvases.set(imageData.id, drawingCanvas);
-        this.imageDrawings.set(imageData.id, imageData.drawingData);
-
-        // Set as current image
-        this.selectImage(container);
-
-        // Wait for image to load
-        img.onload = () => {
-            if (imageData.width === 200 && !imageData.height) { // New image, center it
-                this.centerImage(container);
-            }
-            this.saveImagesState();
-        };
-                // Load existing drawing data if available
-        if (imageData.drawingData) {
-            this.loadDrawingToCanvas(drawingCanvas, imageData.drawingData);
-        }
-    }
-
-    // Add method to load drawing to a specific canvas
-    loadDrawingToCanvas(canvas, drawingData) {
-        const img = new Image();
-        img.onload = () => {
-            const ctx = canvas.getContext('2d');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-        };
-        img.src = drawingData;
-    }
-
-    selectImage(container) {
-        // Deselect all images
-        this.deselectAllImages();
-        
-        // Select this image
-        container.classList.add('selected');
-        this.currentImage = container;
-        
-        // Bring to front
-        container.style.zIndex = this.getHighestZIndex() + 1;
-
-        // Render the associated drawing
-        App.scribbleCanvas.loadCanvasState();
-    }
-    
-    deselectAllImages() {
-        this.imageLayer.querySelectorAll('.image-container').forEach(img => {
-            img.classList.remove('selected');
-        });
-        this.currentImage = null;
-        App.scribbleCanvas.loadCanvasState(); // Clear the canvas when no image is selected
-    }
-
-
-    renderImageDrawing() {
-        const canvas = document.getElementById('scribbleCanvas');
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas
-
-        if (this.currentImage) {
-            const imageId = this.currentImage.dataset.imageId;
-            const drawingData = this.imageDrawings.get(imageId);
-            if (drawingData) {
-                const img = new Image();
-                img.onload = () => {
-                    ctx.drawImage(img, 0, 0);
-                };
-                img.src = drawingData;
-            }
-        }
-    }
-
-    getHighestZIndex() {
-        let maxZ = 0;
-        this.imageLayer.querySelectorAll('.image-container').forEach(img => {
-            const z = parseInt(img.style.zIndex) || 0;
-            if (z > maxZ) maxZ = z;
-        });
-        return maxZ;
-    }
-
-    centerImage(container) {
-        if (!container) return;
-        const layerRect = this.imageLayer.getBoundingClientRect();
-        const imgRect = container.getBoundingClientRect();
-        const newX = Math.max(0, (layerRect.width - imgRect.width) / 2);
-        const newY = Math.max(0, (layerRect.height - imgRect.height) / 2);
-        container.style.left = `${newX}px`;
-        container.style.top = `${newY}px`;
-    }
-
-    deleteImage(imageId) {
-        const imageIndex = this.images.findIndex(img => img.id === imageId);
-        if (imageIndex > -1) {
-            this.images[imageIndex].element.remove();
-            this.images.splice(imageIndex, 1);
-            
-            if (this.currentImage && this.currentImage.dataset.imageId === imageId) {
-                this.currentImage = null;
-            }
-            
-            this.imageDrawings.delete(imageId);
-            this.imageCanvases.delete(imageId); // Clean up the canvas reference
-            this.saveImagesState();
-            App.scribbleCanvas.loadCanvasState();
-        }
-    }
-
-    saveImagesState() {
-        const imagesData = [];
-        this.imageLayer.querySelectorAll('.image-container').forEach(container => {
-            const img = container.querySelector('img');
-            const imageId = container.dataset.imageId;
-            imagesData.push({
-                id: imageId,
-                src: img.src,
-                left: container.offsetLeft,
-                top: container.offsetTop,
-                width: img.offsetWidth,
-                height: img.offsetHeight,
-                zIndex: container.style.zIndex || 0,
-                drawingData: this.imageDrawings.get(imageId) || null
-            });
-        });
-        StorageManager.saveToLocalStorage(`imagesState_${this.activeTabId}`, JSON.stringify(imagesData));
-    }
-
-    loadImages() {
-        const savedState = StorageManager.getFromLocalStorage(`imagesState_${this.activeTabId}`);
-        if (savedState) {
-            try {
-                const imagesData = JSON.parse(savedState);
-                imagesData.forEach(imageData => {
-                    this.createImageElement(imageData);
-                    if (imageData.zIndex) {
-                        const container = this.imageLayer.querySelector(`[data-image-id="${imageData.id}"]`);
-                        if (container) {
-                            container.style.zIndex = imageData.zIndex;
-                        }
-                    }
-                });
-            } catch (e) {
-                console.error("Failed to parse images state:", e);
-                StorageManager.removeFromLocalStorage(`imagesState_${this.activeTabId}`);
-            }
-        }
-    }
-
-    clearImages() {
-        this.imageLayer.innerHTML = '';
-        this.images = [];
-        this.currentImage = null;
-        this.imageDrawings = new Map();
-        StorageManager.removeFromLocalStorage(`imagesState_${this.activeTabId}`);
+        this.overlayCanvas.addEventListener('touchstart', (e) => this.handleMouseDown(e.touches[0]), { passive: false });
+        this.overlayCanvas.addEventListener('touchmove', (e) => this.handleMouseMove(e.touches[0]), { passive: false });
+        this.overlayCanvas.addEventListener('touchend', () => this.handleMouseUp(), { passive: false });
     }
 
     handleMouseDown(e) {
-        // Only handle image interactions if the pointer tool is active
-        if (App.toolManager.activeTool !== 'pointer') {
-            this.deselectAllImages();
-            return;
-        }
+        const rect = this.overlayCanvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
 
-        const target = e.target;
-        const imageContainer = target.closest('.image-container');
-
-        if (imageContainer) {
-            this.selectImage(imageContainer);
-        }
-
-        if (target.classList.contains('resize-handle')) {
+        if (App.toolManager.activeTool === 'pointer') {
             e.preventDefault();
-            e.stopPropagation();
-            this.isResizing = true;
-            this.activeHandle = target;
-            this.currentImage = imageContainer;
-            
-            const img = this.currentImage.querySelector('img');
-            this.initialWidth = img.offsetWidth;
-            this.initialHeight = img.offsetHeight;
-            this.initialLeft = this.currentImage.offsetLeft;
-            this.initialTop = this.currentImage.offsetTop;
-        } else if (imageContainer) {
-            e.preventDefault();
-            e.stopPropagation();
-            this.isDragging = true;
-            this.currentImage = imageContainer;
-            this.currentImage.classList.add('dragging');
-            
-            this.startX = e.clientX;
-            this.startY = e.clientY;
-            this.initialLeft = this.currentImage.offsetLeft;
-            this.initialTop = this.currentImage.offsetTop;
-        }
-    }
+            const activeLayer = this.layerManager.activeLayer;
 
-    handleTouchStart(e) {
-        if (App.toolManager.activeTool !== 'pointer') {
-            return;
-        }
-        const touch = e.touches[0];
-        const target = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (activeLayer && activeLayer.type === 'image') {
+                const handles = this.renderer.getImageHandles(activeLayer);
+                
+                // Check if the close button was clicked
+                const closeBtn = this.renderer.getCloseButton(activeLayer);
+                if (mouseX >= closeBtn.x - 12 && mouseX <= closeBtn.x + 12 && mouseY >= closeBtn.y - 12 && mouseY <= closeBtn.y + 12) {
+                    this.layerManager.removeLayer(activeLayer.id);
+                    return;
+                }
 
-        if (target && (target.classList.contains('image-container') || target.parentElement?.classList.contains('image-container'))) {
-            e.preventDefault();
-            const fakeMouseEvent = {
-                target: target,
-                clientX: touch.clientX,
-                clientY: touch.clientY,
-                preventDefault: () => {},
-                stopPropagation: () => {}
-            };
-            this.handleMouseDown(fakeMouseEvent);
+                for (const key in handles) {
+                    const handle = handles[key];
+                    if (mouseX >= handle.x - 6 && mouseX <= handle.x + 6 && mouseY >= handle.y - 6 && mouseY <= handle.y + 6) {
+                        this.isResizing = true;
+                        this.resizeHandle = key;
+                        this.dragStart = { x: mouseX, y: mouseY, width: activeLayer.width, height: this.renderer.getImageHeight(activeLayer) };
+                        return;
+                    }
+                }
+            }
+            const clickedLayer = this.layerManager.getLayerAt(mouseX, mouseY);
+            if (clickedLayer && clickedLayer.type === 'image') {
+                this.isDragging = true;
+                this.dragStart = { x: mouseX, y: mouseY, layerX: clickedLayer.x, layerY: clickedLayer.y };
+            }
+        } else if (App.toolManager.activeTool === 'brush') {
+            this.renderer.handleDrawingMouseDown(mouseX, mouseY);
         }
     }
 
     handleMouseMove(e) {
-        if (App.toolManager.activeTool !== 'pointer') {
-            return;
-        }
+        const rect = this.overlayCanvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        if (App.toolManager.activeTool === 'pointer') {
+            const activeLayer = this.layerManager.activeLayer;
 
-        if (this.isDragging && this.currentImage) {
-            e.preventDefault();
-            const dx = e.clientX - this.startX;
-            const dy = e.clientY - this.startY;
+            if (this.isDragging && activeLayer && activeLayer.type === 'image') {
+                const dx = mouseX - this.dragStart.x;
+                const dy = mouseY - this.dragStart.y;
+                activeLayer.x = this.dragStart.layerX + dx;
+                activeLayer.y = this.dragStart.layerY + dy;
+                this.renderer.renderActiveState();
+            } else if (this.isResizing && activeLayer && activeLayer.type === 'image') {
+                const dx = mouseX - this.dragStart.x;
+                const dy = mouseY - this.dragStart.y;
 
-            const newLeft = this.initialLeft + dx;
-            const newTop = this.initialTop + dy;
+                if (this.resizeHandle === 'br') {
+                    activeLayer.width = Math.max(20, this.dragStart.width + dx);
+                } else if (this.resizeHandle === 'bl') {
+                    const newWidth = Math.max(20, this.dragStart.width - dx);
+                    activeLayer.x = this.dragStart.layerX + (this.dragStart.width - newWidth);
+                    activeLayer.width = newWidth;
+                } else if (this.resizeHandle === 'tr') {
+                    activeLayer.width = Math.max(20, this.dragStart.width + dx);
+                    const newHeight = Math.max(20, this.dragStart.height - dy);
+                    activeLayer.y = this.dragStart.layerY + (this.dragStart.height - newHeight);
+                } else if (this.resizeHandle === 'tl') {
+                    const newWidth = Math.max(20, this.dragStart.width - dx);
+                    activeLayer.x = this.dragStart.layerX + (this.dragStart.width - newWidth);
+                    const newHeight = Math.max(20, this.dragStart.height - dy);
+                    activeLayer.y = this.dragStart.layerY + (this.dragStart.height - newHeight);
+                }
 
-            this.currentImage.style.left = `${newLeft}px`;
-            this.currentImage.style.top = `${newTop}px`;
-        } else if (this.isResizing && this.currentImage) {
-            e.preventDefault();
-            const dx = e.clientX - this.startX;
-            const dy = e.clientY - this.startY;
-            const img = this.currentImage.querySelector('img');
+                const img = new Image();
+                img.src = activeLayer.data;
+                const aspectRatio = img.width / img.height;
+                activeLayer.height = activeLayer.width / aspectRatio;
 
-            let newWidth = this.initialWidth;
-            let newHeight = this.initialHeight;
-            let newLeft = this.initialLeft;
-            let newTop = this.initialTop;
-
-            const aspectRatio = this.initialWidth / this.initialHeight;
-
-            if (this.activeHandle.classList.contains('br')) {
-                newWidth = Math.max(50, this.initialWidth + dx);
-                newHeight = newWidth / aspectRatio;
-            } else if (this.activeHandle.classList.contains('bl')) {
-                newWidth = Math.max(50, this.initialWidth - dx);
-                newHeight = newWidth / aspectRatio;
-                newLeft = this.initialLeft + this.initialWidth - newWidth;
-            } else if (this.activeHandle.classList.contains('tr')) {
-                newWidth = Math.max(50, this.initialWidth + dx);
-                newHeight = newWidth / aspectRatio;
-                newTop = this.initialTop + this.initialHeight - newHeight;
-            } else if (this.activeHandle.classList.contains('tl')) {
-                newWidth = Math.max(50, this.initialWidth - dx);
-                newHeight = newWidth / aspectRatio;
-                newLeft = this.initialLeft + this.initialWidth - newWidth;
-                newTop = this.initialTop + this.initialHeight - newHeight;
+                this.renderer.renderActiveState();
             }
-
-            img.style.width = `${newWidth}px`;
-            img.style.height = `${newHeight}px`;
-            this.currentImage.style.left = `${newLeft}px`;
-            this.currentImage.style.top = `${newTop}px`;
-        }
-    }
-
-    handleTouchMove(e) {
-        if (App.toolManager.activeTool !== 'pointer') {
-            return;
-        }
-        if (this.isDragging || this.isResizing) {
-            const touch = e.touches[0];
-            const fakeMouseEvent = {
-                clientX: touch.clientX,
-                clientY: touch.clientY,
-                preventDefault: () => {}
-            };
-            this.handleMouseMove(fakeMouseEvent);
+        } else if (App.toolManager.activeTool === 'brush') {
+            this.renderer.handleDrawingMouseMove(mouseX, mouseY);
         }
     }
 
     handleMouseUp() {
         if (this.isDragging || this.isResizing) {
-            this.saveImagesState();
+            this.isDragging = false;
+            this.isResizing = false;
+            this.dragStart = { x: 0, y: 0 };
+            this.resizeHandle = null;
+            this.layerManager.saveStateToHistory();
+            this.layerManager.saveState();
+            this.renderer.renderAllLayers(); // Final render on main canvas
+        } else if (App.toolManager.activeTool === 'brush') {
+            this.renderer.handleDrawingMouseUp();
         }
-        if (this.currentImage) {
-            this.currentImage.classList.remove('dragging');
+    }
+}
+
+// Renderer Class: Manages drawing and displaying all layers on the main canvas
+class Renderer {
+    constructor(mainCanvasId, overlayCanvasId) {
+        this.mainCanvas = document.getElementById(mainCanvasId);
+        this.mainCtx = this.mainCanvas.getContext('2d');
+        this.overlayCanvas = document.getElementById(overlayCanvasId);
+        this.overlayCtx = this.overlayCanvas.getContext('2d');
+
+        this.isDrawing = false;
+        this.points = [];
+        this.currentDrawingCanvas = document.createElement('canvas'); // Temp canvas for single strokes
+        this.currentDrawingCtx = this.currentDrawingCanvas.getContext('2d');
+
+        this.resizeCanvas = debounce(this._resizeCanvas.bind(this), 200);
+        this.resizeCanvas();
+        window.addEventListener('resize', this.resizeCanvas);
+
+        this.setupCanvas();
+        this.setupControls();
+        this.setupButtons();
+    }
+
+    _resizeCanvas() {
+        const sidebar = document.querySelector('.controls-sidebar');
+        const footer = document.querySelector('#footer');
+        const header = document.getElementById('header');
+        const tabBar = document.getElementById('tab-bar');
+
+        const sidebarWidth = sidebar ? sidebar.offsetWidth : 0;
+        const footerHeight = footer ? footer.offsetHeight : 0;
+        const headerHeight = header ? header.offsetHeight : 0;
+        const tabBarHeight = tabBar ? tabBar.offsetHeight : 0;
+
+        this.mainCanvas.width = window.innerWidth - sidebarWidth;
+        this.mainCanvas.height = window.innerHeight - footerHeight - headerHeight - tabBarHeight;
+        this.overlayCanvas.width = this.mainCanvas.width;
+        this.overlayCanvas.height = this.mainCanvas.height;
+
+        this.renderAllLayers();
+        this.renderActiveState();
+    }
+
+    setupCanvas() {
+        this.mainCtx.lineCap = 'round';
+        this.mainCtx.lineJoin = 'round';
+        this.mainCtx.lineWidth = 5;
+        this.mainCtx.strokeStyle = '#000';
+        
+        this.currentDrawingCtx.lineCap = 'round';
+        this.currentDrawingCtx.lineJoin = 'round';
+    }
+    
+    setupControls() {
+        const colorPaletteGrid = document.getElementById('colorPaletteGrid');
+        const colors = [
+            '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#FFFF00',
+            '#FF00FF', '#00FFFF', '#808080', '#C0C0C0', '#800000', '#808000',
+            '#008000', '#800080', '#008080', '#000080', '#FF4500', '#2E8B57',
+            '#D2691E', '#4B0082', '#A52A2A', '#DDA0DD', '#F5DEB3', '#9ACD32',
+            '#20B2AA', '#F08080', '#6B8E23', '#FF69B4', '#CD5C5C', '#FFA07A',
+            '#90EE90', '#F4A460', '#BA55D3', '#DAA520', '#C71585', '#00BFFF'
+        ];
+
+        colors.forEach(color => {
+            const colorBox = document.createElement('div');
+            colorBox.classList.add('color-box');
+            colorBox.style.backgroundColor = color;
+            colorBox.setAttribute('data-color', color);
+            colorPaletteGrid.appendChild(colorBox);
+
+            colorBox.addEventListener('click', () => {
+                document.querySelectorAll('.color-box').forEach(box => box.classList.remove('active'));
+                colorBox.classList.add('active');
+                this.mainCtx.strokeStyle = color;
+                this.currentDrawingCtx.strokeStyle = color;
+            });
+        });
+
+        if (document.querySelector('.color-box[data-color="#000000"]')) {
+            document.querySelector('.color-box[data-color="#000000"]').classList.add('active');
         }
-        this.isDragging = false;
-        this.isResizing = false;
-        this.activeHandle = null;
+        
+        const brushSizeSlider = document.getElementById('brushSizeSlider');
+        const brushSizeValue = document.getElementById('brushSizeValue');
+        
+        brushSizeSlider.addEventListener('input', () => {
+            const size = brushSizeSlider.value;
+            this.mainCtx.lineWidth = size;
+            this.currentDrawingCtx.lineWidth = size;
+            brushSizeValue.textContent = size;
+        });
+    }
+
+    setupButtons() {
+        document.getElementById('clearButton').addEventListener('click', () => App.layerManager.clearLayers());
+        document.getElementById('downloadBtn').addEventListener('click', () => this.downloadCanvas());
+        document.getElementById('printBtn').addEventListener('click', () => this.printCanvas());
+        
+        // Add keyboard shortcuts for undo/redo
+        document.addEventListener('keydown', (e) => {
+            const isMac = (navigator.platform.toUpperCase().indexOf('MAC') >= 0);
+            if (e.key === 'z' && (isMac ? e.metaKey : e.ctrlKey)) {
+                e.preventDefault();
+                App.layerManager.undo();
+            } else if (e.key === 'y' && (isMac ? e.metaKey : e.ctrlKey)) {
+                e.preventDefault();
+                App.layerManager.redo();
+            }
+        });
+    }
+
+    handleDrawingMouseDown(x, y) {
+        this.isDrawing = true;
+        this.points = [{ x, y }];
+        
+        this.currentDrawingCanvas.width = this.overlayCanvas.width;
+        this.currentDrawingCanvas.height = this.overlayCanvas.height;
+        this.currentDrawingCtx.clearRect(0, 0, this.currentDrawingCanvas.width, this.currentDrawingCanvas.height);
+        this.currentDrawingCtx.strokeStyle = this.mainCtx.strokeStyle;
+        this.currentDrawingCtx.lineWidth = this.mainCtx.lineWidth;
+    }
+
+    handleDrawingMouseMove(x, y) {
+        if (!this.isDrawing) return;
+        this.points.push({ x, y });
+        
+        this.currentDrawingCtx.clearRect(0, 0, this.currentDrawingCanvas.width, this.currentDrawingCanvas.height);
+        this.currentDrawingCtx.beginPath();
+        this.currentDrawingCtx.moveTo(this.points[0].x, this.points[0].y);
+        
+        for (let i = 1; i < this.points.length - 1; i++) {
+            const midPoint = {
+                x: (this.points[i].x + this.points[i + 1].x) / 2,
+                y: (this.points[i].y + this.points[i + 1].y) / 2,
+            };
+            this.currentDrawingCtx.quadraticCurveTo(this.points[i].x, this.points[i].y, midPoint.x, midPoint.y);
+        }
+        
+        const lastPoint = this.points[this.points.length - 2];
+        const lastMidPoint = {
+            x: (lastPoint.x + x) / 2,
+            y: (lastPoint.y + y) / 2,
+        };
+        this.currentDrawingCtx.quadraticCurveTo(lastPoint.x, lastPoint.y, lastMidPoint.x, lastMidPoint.y);
+        
+        this.currentDrawingCtx.stroke();
+        this.renderActiveState();
+    }
+
+    handleDrawingMouseUp() {
+        if (!this.isDrawing) return;
+        this.isDrawing = false;
+        
+        if (this.points.length > 0) {
+            App.layerManager.addDrawingLayer(this.currentDrawingCanvas.toDataURL());
+        }
+        
+        this.points = [];
+        this.renderActiveState();
+    }
+
+    getImageHeight(layer) {
+        const img = new Image();
+        img.src = layer.data;
+        const aspectRatio = img.width / img.height;
+        return layer.width / aspectRatio;
+    }
+
+    getImageHandles(layer) {
+        const height = this.getImageHeight(layer);
+        return {
+            br: { x: layer.x + layer.width, y: layer.y + height },
+            bl: { x: layer.x, y: layer.y + height },
+            tr: { x: layer.x + layer.width, y: layer.y },
+            tl: { x: layer.x, y: layer.y }
+        };
+    }
+
+    getCloseButton(layer) {
+        return {
+            x: layer.x + layer.width,
+            y: layer.y
+        };
+    }
+
+    renderAllLayers() {
+        this.mainCtx.clearRect(0, 0, this.mainCanvas.width, this.mainCanvas.height);
+        
+        const layers = App.layerManager.getLayers();
+        layers.forEach(layer => {
+            const img = new Image();
+            img.onload = () => {
+                if (layer.type === 'drawing') {
+                    this.mainCtx.drawImage(img, 0, 0);
+                } else if (layer.type === 'image') {
+                    const layerHeight = this.getImageHeight(layer);
+                    this.mainCtx.drawImage(img, layer.x, layer.y, layer.width, layerHeight);
+                }
+            };
+            img.src = layer.data;
+        });
+    }
+
+    renderActiveState() {
+        this.overlayCtx.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+
+        // Render the current, unsaved drawing stroke on top
+        if (this.isDrawing) {
+            this.overlayCtx.drawImage(this.currentDrawingCanvas, 0, 0);
+        }
+
+        // Draw selection and resize handles for the active layer
+        const activeLayer = App.layerManager.activeLayer;
+        if (activeLayer && activeLayer.type === 'image') {
+            const height = this.getImageHeight(activeLayer);
+            this.overlayCtx.strokeStyle = '#007bff';
+            this.overlayCtx.lineWidth = 2;
+            this.overlayCtx.setLineDash([5, 5]);
+            this.overlayCtx.strokeRect(activeLayer.x, activeLayer.y, activeLayer.width, height);
+            this.overlayCtx.setLineDash([]); // Reset line dash
+
+            const handles = this.getImageHandles(activeLayer);
+            this.overlayCtx.fillStyle = '#007bff';
+            for (const key in handles) {
+                const handle = handles[key];
+                this.overlayCtx.beginPath();
+                this.overlayCtx.arc(handle.x, handle.y, 6, 0, 2 * Math.PI);
+                this.overlayCtx.fill();
+                this.overlayCtx.stroke();
+            }
+
+            // Draw the close button
+            const closeBtn = this.getCloseButton(activeLayer);
+            this.overlayCtx.fillStyle = '#ff4444';
+            this.overlayCtx.beginPath();
+            this.overlayCtx.arc(closeBtn.x, closeBtn.y, 10, 0, 2 * Math.PI);
+            this.overlayCtx.fill();
+            this.overlayCtx.fillStyle = '#fff';
+            this.overlayCtx.font = 'bold 16px Arial';
+            this.overlayCtx.textAlign = 'center';
+            this.overlayCtx.textBaseline = 'middle';
+            this.overlayCtx.fillText('x', closeBtn.x, closeBtn.y);
+        }
+    }
+
+    downloadCanvas() {
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = this.mainCanvas.width;
+        tempCanvas.height = this.mainCanvas.height;
+
+        const layers = App.layerManager.getLayers();
+        let loadedCount = 0;
+        const totalImages = layers.filter(l => l.type === 'image').length;
+        
+        const renderAndDownload = () => {
+             tempCtx.drawImage(this.mainCanvas, 0, 0);
+             if (this.isDrawing) {
+                tempCtx.drawImage(this.currentDrawingCanvas, 0, 0);
+             }
+             const url = tempCanvas.toDataURL('image/png');
+             const a = document.createElement('a');
+             a.href = url;
+             a.download = `scribbler_drawing_${TabManager.activeTabId}.png`;
+             document.body.appendChild(a);
+             a.click();
+             document.body.removeChild(a);
+        };
+
+        const checkAndDraw = () => {
+            loadedCount++;
+            if (loadedCount === totalImages) {
+                renderAndDownload();
+            }
+        };
+
+        layers.forEach(layer => {
+            const img = new Image();
+            img.onload = () => {
+                if (layer.type === 'image') {
+                    const layerHeight = this.getImageHeight(layer);
+                    tempCtx.drawImage(img, layer.x, layer.y, layer.width, layerHeight);
+                } else if (layer.type === 'drawing') {
+                    tempCtx.drawImage(img, 0, 0);
+                }
+                checkAndDraw();
+            };
+            img.src = layer.data;
+        });
+
+        if (totalImages === 0) {
+            renderAndDownload();
+        }
+    }
+    
+    printCanvas() {
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = this.mainCanvas.width;
+        tempCanvas.height = this.mainCanvas.height;
+        
+        const layers = App.layerManager.getLayers();
+        let loadedCount = 0;
+        const totalImages = layers.filter(l => l.type === 'image').length;
+
+        const renderAndPrint = () => {
+            tempCtx.drawImage(this.mainCanvas, 0, 0);
+            if (this.isDrawing) {
+                tempCtx.drawImage(this.currentDrawingCanvas, 0, 0);
+            }
+            const dataUrl = tempCanvas.toDataURL('image/png');
+            const windowContent = `<!DOCTYPE html>
+                <html>
+                    <head>
+                        <title>Scribbler Print</title>
+                    </head>
+                    <body>
+                        <img src="${dataUrl}" style="max-width: 100%;">
+                    </body>
+                </html>`;
+            const printWindow = window.open('', '', 'height=600,width=800');
+            printWindow.document.write(windowContent);
+            printWindow.document.close();
+            printWindow.focus();
+            printWindow.print();
+            printWindow.close();
+        };
+
+        const checkAndDraw = () => {
+            loadedCount++;
+            if (loadedCount === totalImages) {
+                renderAndPrint();
+            }
+        };
+
+        layers.forEach(layer => {
+            const img = new Image();
+            img.onload = () => {
+                if (layer.type === 'image') {
+                    const layerHeight = this.getImageHeight(layer);
+                    tempCtx.drawImage(img, layer.x, layer.y, layer.width, layerHeight);
+                } else if (layer.type === 'drawing') {
+                    tempCtx.drawImage(img, 0, 0);
+                }
+                checkAndDraw();
+            };
+            img.src = layer.data;
+        });
+
+        if (totalImages === 0) {
+            renderAndPrint();
+        }
     }
 }
 
@@ -614,12 +712,10 @@ class ImageManager {
 class TabManager {
     static activeTabId = 'tab-1';
     static tabList = [];
-    static canvasInstance = null; // Reference to the ScribbleCanvas instance
-    static imageManager = null; // Reference to the ImageManager instance
-
-    static initialize(canvasInstance, imageManager) {
-        this.canvasInstance = canvasInstance;
-        this.imageManager = imageManager;
+    static layerManager = null;
+    
+    static initialize(layerManager) {
+        this.layerManager = layerManager;
         this.tabContainer = document.getElementById('tab-container');
         this.addTabBtn = document.getElementById('add-tab-btn');
 
@@ -631,7 +727,7 @@ class TabManager {
             this.switchToTab(this.activeTabId);
         }
     }
-
+    
     static loadTabsFromStorage() {
         const storedTabs = StorageManager.getFromLocalStorage('scribbler_tabs');
         if (storedTabs) {
@@ -743,8 +839,7 @@ class TabManager {
         if (newActiveTab) {
             newActiveTab.classList.add('active');
             this.activeTabId = tabId;
-            this.imageManager.setActiveTab(tabId);
-            this.canvasInstance.loadCanvasState();
+            this.layerManager.loadState();
             this.saveTabsToStorage();
         }
     }
@@ -756,8 +851,7 @@ class TabManager {
         }
 
         this.tabList = this.tabList.filter(tab => tab.id !== tabId);
-        StorageManager.removeFromLocalStorage(`canvasState_${tabId}`);
-        StorageManager.removeFromLocalStorage(`imageState_${tabId}`);
+        StorageManager.removeFromLocalStorage(`layersState_${tabId}`);
 
         if (this.activeTabId === tabId) {
             const newActiveTabId = this.tabList[0].id; // Switch to the first tab
@@ -769,325 +863,23 @@ class TabManager {
     }
 }
 
-class ScribbleCanvas {
-    constructor(canvasId, clearButtonId, imageManager) {
-        this.canvas = document.getElementById(canvasId);
-        this.ctx = this.canvas.getContext('2d');
-        this.drawing = false;
-        this.points = [];
-        this.imageManager = imageManager;
-        
-        this.resizeCanvas = debounce(this._resizeCanvas.bind(this), 200);
-        this.resizeCanvas();
-        window.addEventListener('resize', this.resizeCanvas);
-        
-        this.keyboardShortcutManager = new KeyboardShortcutManager(this.canvas);
-        
-        this.setupCanvas();
-        this.setupControls();
-        this.attachEventListeners(clearButtonId);
+// Image Handling
+const imageInput = document.getElementById('image-upload');
+const uploadButton = document.getElementById('uploadImageBtn');
+uploadButton.addEventListener('click', () => imageInput.click());
 
-        this.touchManager = new TouchManager(this.canvas, 
-            (x, y) => this.startDrawing(x, y), 
-            (x, y) => this.draw(x, y), 
-            () => this.stopDrawing()
-        );
-        this.touchManager.attachTouchEvents();
-    }
+imageInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-    // Load the canvas state from localStorage for the active tab
-    loadCanvasState() {
-        if (this.imageManager.currentImage) {
-            this.imageManager.renderImageDrawing();
-        } else {
-            const savedState = StorageManager.getFromLocalStorage('canvasState_' + TabManager.activeTabId, '');
-            if (savedState) {
-                const img = new Image();
-                img.onload = () => {
-                    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                    this.ctx.drawImage(img, 0, 0);
-                };
-                img.src = savedState;
-            } else {
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            }
-        }
-    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        App.layerManager.addImageLayer(event.target.result);
+    };
+    reader.readAsDataURL(file);
+    imageInput.value = ''; // Reset input for same file upload
+});
 
-    // Resize the canvas to fit the window
-    _resizeCanvas() {
-        const sidebar = document.querySelector('.controls-sidebar');
-        const footer = document.querySelector('#footer');
-        const header = document.getElementById('header');
-        const tabBar = document.getElementById('tab-bar');
-
-        const sidebarWidth = sidebar ? sidebar.offsetWidth : 0;
-        const footerHeight = footer ? footer.offsetHeight : 0;
-        const headerHeight = header ? header.offsetHeight : 0;
-        const tabBarHeight = tabBar ? tabBar.offsetHeight : 0;
-
-        this.canvas.width = window.innerWidth - sidebarWidth;
-        this.canvas.height = window.innerHeight - footerHeight - headerHeight - tabBarHeight;
-        this.loadCanvasState(); // Reload the canvas content after resizing
-    }
-
-    // Set up canvas properties and resize functionality
-    setupCanvas() {
-        this.ctx.lineCap = 'round';
-        this.ctx.lineJoin = 'round';
-        this.ctx.lineWidth = 5;
-        this.ctx.strokeStyle = '#000';
-    }
-
-    // Setup color palette and brush size controls
-    setupControls() {
-        const colorPaletteGrid = document.getElementById('colorPaletteGrid');
-        const colors = [
-            '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#FFFF00',
-            '#FF00FF', '#00FFFF', '#808080', '#C0C0C0', '#800000', '#808000',
-            '#008000', '#800080', '#008080', '#000080', '#FF4500', '#2E8B57',
-            '#D2691E', '#4B0082', '#A52A2A', '#DDA0DD', '#F5DEB3', '#9ACD32',
-            '#20B2AA', '#F08080', '#6B8E23', '#FF69B4', '#CD5C5C', '#FFA07A',
-            '#90EE90', '#F4A460', '#BA55D3', '#DAA520', '#C71585', '#00BFFF'
-        ];
-
-        colors.forEach(color => {
-            const colorBox = document.createElement('div');
-            colorBox.classList.add('color-box');
-            colorBox.style.backgroundColor = color;
-            colorBox.setAttribute('data-color', color);
-            colorPaletteGrid.appendChild(colorBox);
-
-            colorBox.addEventListener('click', () => {
-                document.querySelectorAll('.color-box').forEach(box => box.classList.remove('active'));
-                colorBox.classList.add('active');
-                this.ctx.strokeStyle = color;
-            });
-        });
-
-        if (document.querySelector('.color-box[data-color="#000000"]')) {
-            document.querySelector('.color-box[data-color="#000000"]').classList.add('active');
-        }
-
-        const brushSizeSlider = document.getElementById('brushSizeSlider');
-        const brushSizeValue = document.getElementById('brushSizeValue');
-        
-        brushSizeSlider.addEventListener('input', () => {
-            const size = brushSizeSlider.value;
-            this.ctx.lineWidth = size;
-            brushSizeValue.textContent = size;
-        });
-    }
-
-    // Save the current state to undo stack
-    saveState() {
-        this.keyboardShortcutManager.saveState();
-    }
-
-    // Update startDrawing to handle coordinate adjustment
-    startDrawing(x, y) {
-        if (App.toolManager.activeTool !== 'brush') return;
-        this.drawing = true;
-        
-        let adjustedX = x;
-        let adjustedY = y;
-        
-        // If drawing on an image, adjust coordinates
-        if (this.imageManager.currentImage) {
-            const imageRect = this.imageManager.currentImage.getBoundingClientRect();
-            const canvasRect = this.canvas.getBoundingClientRect();
-            
-            adjustedX = x - (imageRect.left - canvasRect.left);
-            adjustedY = y - (imageRect.top - canvasRect.top);
-        }
-        
-        this.points = [{ x: adjustedX, y: adjustedY }];
-        this.saveState();
-    }
-
-// Update stopDrawing to save to the correct location
-    stopDrawing() {
-        if (!this.drawing) return;
-
-        this.drawing = false;
-        this.points = [];
-        
-        if (this.imageManager.currentImage) {
-            const imageId = this.imageManager.currentImage.dataset.imageId;
-            const imageCanvas = this.imageManager.imageCanvases.get(imageId);
-            
-            if (imageCanvas) {
-                this.imageManager.imageDrawings.set(imageId, imageCanvas.toDataURL());
-                this.imageManager.saveImagesState();
-            }
-        } else {
-            StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, this.canvas.toDataURL());
-        }
-    }
-
-draw(x, y) {
-    if (!this.drawing || App.toolManager.activeTool !== 'brush') return;
-
-    let targetCanvas = this.canvas;
-    let targetCtx = this.ctx;
-    let adjustedX = x;
-    let adjustedY = y;
-
-    // If an image is selected, draw on its canvas instead
-    if (this.imageManager.currentImage) {
-        const imageId = this.imageManager.currentImage.dataset.imageId;
-        const imageCanvas = this.imageManager.imageCanvases.get(imageId);
-        
-        if (imageCanvas) {
-            // Get image position and adjust coordinates
-            const imageRect = this.imageManager.currentImage.getBoundingClientRect();
-            const canvasRect = this.canvas.getBoundingClientRect();
-            
-            adjustedX = x - (imageRect.left - canvasRect.left);
-            adjustedY = y - (imageRect.top - canvasRect.top);
-            
-            // Set canvas size to match image
-            const img = this.imageManager.currentImage.querySelector('img');
-            if (imageCanvas.width !== img.offsetWidth) {
-                imageCanvas.width = img.offsetWidth;
-                imageCanvas.height = img.offsetHeight;
-                
-                // Reload existing drawing after resize
-                const existingData = this.imageManager.imageDrawings.get(imageId);
-                if (existingData) {
-                    this.imageManager.loadDrawingToCanvas(imageCanvas, existingData);
-                }
-            }
-            
-            targetCanvas = imageCanvas;
-            targetCtx = imageCanvas.getContext('2d');
-            
-            // Copy drawing settings
-            targetCtx.lineCap = this.ctx.lineCap;
-            targetCtx.lineJoin = this.ctx.lineJoin;
-            targetCtx.lineWidth = this.ctx.lineWidth;
-            targetCtx.strokeStyle = this.ctx.strokeStyle;
-        }
-    }
-
-    this.points.push({ x: adjustedX, y: adjustedY });
-
-    if (this.points.length >= 2) {
-        targetCtx.beginPath();
-        targetCtx.moveTo(this.points[0].x, this.points[0].y);
-
-        for (let i = 1; i < this.points.length - 1; i++) {
-            const midPoint = {
-                x: (this.points[i].x + this.points[i + 1].x) / 2,
-                y: (this.points[i].y + this.points[i + 1].y) / 2,
-            };
-            targetCtx.quadraticCurveTo(this.points[i].x, this.points[i].y, midPoint.x, midPoint.y);
-        }
-
-        const lastPoint = this.points[this.points.length - 2];
-        const lastMidPoint = {
-            x: (lastPoint.x + adjustedX) / 2,
-            y: (lastPoint.y + adjustedY) / 2,
-        };
-        targetCtx.quadraticCurveTo(lastPoint.x, lastPoint.y, lastMidPoint.x, lastMidPoint.y);
-
-        targetCtx.stroke();
-    }
-}
-
-    
-    // Function to download the canvas as an image
-    downloadCanvas() {
-        const url = this.createCombinedCanvas().toDataURL('image/png');
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `scribbler_drawing_${TabManager.activeTabId}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-    }
-    
-    // Function to print the canvas content
-    printCanvas() {
-        const dataUrl = this.createCombinedCanvas().toDataURL('image/png');
-        const windowContent = `<!DOCTYPE html>
-            <html>
-                <head>
-                    <title>Scribbler Print</title>
-                </head>
-                <body>
-                    <img src="${dataUrl}" style="max-width: 100%;">
-                </body>
-            </html>`;
-        const printWindow = window.open('', '', 'height=600,width=800');
-        printWindow.document.write(windowContent);
-        printWindow.document.close();
-        printWindow.focus();
-        printWindow.print();
-        printWindow.close();
-    }
-
-    createCombinedCanvas() {
-        const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCanvas.width = this.canvas.width;
-        tempCanvas.height = this.canvas.height;
-    
-        // Draw the background color
-        tempCtx.fillStyle = document.body.classList.contains('dark-mode') ? '#1f2022' : '#f9f9fb';
-        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-    
-        // Sort images by zIndex to draw them in the correct order
-        const sortedImages = this.imageManager.images.sort((a, b) => {
-            const zA = parseInt(a.element.style.zIndex) || 0;
-            const zB = parseInt(b.element.style.zIndex) || 0;
-            return zA - zB;
-        });
-    
-        // Draw images and their associated drawings
-        sortedImages.forEach(image => {
-            const imgElement = image.element.querySelector('img');
-            const drawingData = this.imageManager.imageDrawings.get(image.id);
-    
-            // Draw the image itself
-            tempCtx.drawImage(imgElement, image.element.offsetLeft, image.element.offsetTop, imgElement.offsetWidth, imgElement.offsetHeight);
-    
-            // If there's drawing data for this image, draw it on top
-            if (drawingData) {
-                const drawingImg = new Image();
-                drawingImg.src = drawingData;
-                tempCtx.drawImage(drawingImg, image.element.offsetLeft, image.element.offsetTop, imgElement.offsetWidth, imgElement.offsetHeight);
-            }
-        });
-    
-        // Draw the main canvas content (which contains the current drawing)
-        const currentCanvasState = new Image();
-        currentCanvasState.src = this.canvas.toDataURL();
-        tempCtx.drawImage(currentCanvasState, 0, 0);
-    
-        return tempCanvas;
-    }
-    
-
-    attachEventListeners(clearButtonId) {
-        this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e.offsetX, e.offsetY));
-        this.canvas.addEventListener('mousemove', (e) => this.draw(e.offsetX, e.offsetY));
-        this.canvas.addEventListener('mouseup', () => this.stopDrawing());
-        this.canvas.addEventListener('mouseleave', () => this.stopDrawing());
-
-        document.addEventListener('keydown', (e) => this.keyboardShortcutManager.handleKeyboardShortcuts(e));
-
-        document.getElementById(clearButtonId).addEventListener('click', () => {
-            this.saveState();
-            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            this.imageManager.clearImages();
-            StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, '');
-        });
-
-        document.getElementById('downloadBtn').addEventListener('click', () => this.downloadCanvas());
-        document.getElementById('printBtn').addEventListener('click', () => this.printCanvas());
-    }
-}
 
 // Dark Mode Switcher
 const darkModeToggle = document.getElementById('darkModeToggle');
@@ -1104,15 +896,17 @@ if (StorageManager.getFromLocalStorage('darkMode') === 'true') {
 
 // Main application class to hold instances
 class App {
-    static scribbleCanvas;
-    static imageManager;
+    static layerManager;
+    static renderer;
     static toolManager;
+    static interactionManager;
 
     static initialize() {
-        this.imageManager = new ImageManager('image-layer');
-        this.scribbleCanvas = new ScribbleCanvas('scribbleCanvas', 'clearButton', this.imageManager);
-        this.toolManager = new ToolManager(this.scribbleCanvas.canvas, this.imageManager);
-        TabManager.initialize(this.scribbleCanvas, this.imageManager);
+        this.layerManager = new LayerManager();
+        this.renderer = new Renderer('mainCanvas', 'overlayCanvas');
+        this.toolManager = new ToolManager();
+        this.interactionManager = new InteractionManager(this.renderer.overlayCanvas, this.layerManager, this.renderer);
+        TabManager.initialize(this.layerManager);
     }
 }
 

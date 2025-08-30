@@ -567,3 +567,35 @@ body.dark-mode .image-delete-btn {
     position: relative;
     z-index: 0;
 }
+/* Other styles remain the same */
+
+.main-content {
+    position: relative;
+    /* This is crucial to position the canvases correctly */
+}
+
+#mainCanvas,
+#overlayCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    /* The two canvases need to be the same size and positioned exactly on top of each other. */
+}
+/* Other styles remain the same */
+
+.main-content {
+    position: relative;
+    /* This is crucial to position the canvases correctly */
+}
+
+#mainCanvas,
+#overlayCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    /* The two canvases need to be the same size and positioned exactly on top of each other. */
+}
+
+#overlayCanvas.pointer-close-hover {
+    cursor: pointer;
+}
