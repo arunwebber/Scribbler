@@ -138,8 +138,18 @@ class ToolManager {
     updateCanvasCursor() {
         if (this.activeTool === 'brush') {
             this.canvas.classList.remove('pointer-mode');
+            this.canvas.style.pointerEvents = 'auto'; // Canvas captures events for drawing
+            // Disable pointer events on image containers when in brush mode
+            document.querySelectorAll('.image-container').forEach(container => {
+                container.style.pointerEvents = 'none';
+            });
         } else {
             this.canvas.classList.add('pointer-mode');
+            this.canvas.style.pointerEvents = 'none'; // Canvas doesn't capture events
+            // Enable pointer events on image containers when in pointer mode
+            document.querySelectorAll('.image-container').forEach(container => {
+                container.style.pointerEvents = 'auto';
+            });
         }
     }
 }
@@ -197,6 +207,7 @@ class ImageManager {
         this.initialTop = 0;
 
         this.imageDrawings = new Map();
+        this.imageCanvases = new Map(); // Add this - store canvas for each image
 
         this.setupEventListeners();
         this.loadImages();
@@ -263,7 +274,18 @@ class ImageManager {
         img.style.height = 'auto';
         img.style.pointerEvents = 'none'; // Prevent image from capturing events
 
+    // Create a canvas for this image's drawings
+        const drawingCanvas = document.createElement('canvas');
+        drawingCanvas.style.position = 'absolute';
+        drawingCanvas.style.top = '0';
+        drawingCanvas.style.left = '0';
+        drawingCanvas.style.width = '100%';
+        drawingCanvas.style.height = '100%';
+        drawingCanvas.style.pointerEvents = 'none';
+        drawingCanvas.style.zIndex = '1';
+        
         container.appendChild(img);
+        container.appendChild(drawingCanvas); // Add the drawing canvas
 
         // Add resize handles
         ['tl', 'tr', 'bl', 'br'].forEach(pos => {
@@ -290,7 +312,7 @@ class ImageManager {
             id: imageData.id,
             element: container
         });
-
+        this.imageCanvases.set(imageData.id, drawingCanvas);
         this.imageDrawings.set(imageData.id, imageData.drawingData);
 
         // Set as current image
@@ -303,6 +325,22 @@ class ImageManager {
             }
             this.saveImagesState();
         };
+                // Load existing drawing data if available
+        if (imageData.drawingData) {
+            this.loadDrawingToCanvas(drawingCanvas, imageData.drawingData);
+        }
+    }
+
+    // Add method to load drawing to a specific canvas
+    loadDrawingToCanvas(canvas, drawingData) {
+        const img = new Image();
+        img.onload = () => {
+            const ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+        };
+        img.src = drawingData;
     }
 
     selectImage(container) {
@@ -377,6 +415,7 @@ class ImageManager {
             }
             
             this.imageDrawings.delete(imageId);
+            this.imageCanvases.delete(imageId); // Clean up the canvas reference
             this.saveImagesState();
             App.scribbleCanvas.loadCanvasState();
         }
@@ -845,13 +884,28 @@ class ScribbleCanvas {
         this.keyboardShortcutManager.saveState();
     }
 
+    // Update startDrawing to handle coordinate adjustment
     startDrawing(x, y) {
         if (App.toolManager.activeTool !== 'brush') return;
         this.drawing = true;
-        this.points = [{ x, y }];
+        
+        let adjustedX = x;
+        let adjustedY = y;
+        
+        // If drawing on an image, adjust coordinates
+        if (this.imageManager.currentImage) {
+            const imageRect = this.imageManager.currentImage.getBoundingClientRect();
+            const canvasRect = this.canvas.getBoundingClientRect();
+            
+            adjustedX = x - (imageRect.left - canvasRect.left);
+            adjustedY = y - (imageRect.top - canvasRect.top);
+        }
+        
+        this.points = [{ x: adjustedX, y: adjustedY }];
         this.saveState();
     }
 
+// Update stopDrawing to save to the correct location
     stopDrawing() {
         if (!this.drawing) return;
 
@@ -860,40 +914,87 @@ class ScribbleCanvas {
         
         if (this.imageManager.currentImage) {
             const imageId = this.imageManager.currentImage.dataset.imageId;
-            this.imageManager.imageDrawings.set(imageId, this.canvas.toDataURL());
-            this.imageManager.saveImagesState();
+            const imageCanvas = this.imageManager.imageCanvases.get(imageId);
+            
+            if (imageCanvas) {
+                this.imageManager.imageDrawings.set(imageId, imageCanvas.toDataURL());
+                this.imageManager.saveImagesState();
+            }
         } else {
             StorageManager.saveToLocalStorage('canvasState_' + TabManager.activeTabId, this.canvas.toDataURL());
         }
     }
 
-    draw(x, y) {
-        if (!this.drawing || App.toolManager.activeTool !== 'brush') return;
+draw(x, y) {
+    if (!this.drawing || App.toolManager.activeTool !== 'brush') return;
 
-        this.points.push({ x, y });
+    let targetCanvas = this.canvas;
+    let targetCtx = this.ctx;
+    let adjustedX = x;
+    let adjustedY = y;
 
-        if (this.points.length >= 2) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.points[0].x, this.points[0].y);
-
-            for (let i = 1; i < this.points.length - 1; i++) {
-                const midPoint = {
-                    x: (this.points[i].x + this.points[i + 1].x) / 2,
-                    y: (this.points[i].y + this.points[i + 1].y) / 2,
-                };
-                this.ctx.quadraticCurveTo(this.points[i].x, this.points[i].y, midPoint.x, midPoint.y);
+    // If an image is selected, draw on its canvas instead
+    if (this.imageManager.currentImage) {
+        const imageId = this.imageManager.currentImage.dataset.imageId;
+        const imageCanvas = this.imageManager.imageCanvases.get(imageId);
+        
+        if (imageCanvas) {
+            // Get image position and adjust coordinates
+            const imageRect = this.imageManager.currentImage.getBoundingClientRect();
+            const canvasRect = this.canvas.getBoundingClientRect();
+            
+            adjustedX = x - (imageRect.left - canvasRect.left);
+            adjustedY = y - (imageRect.top - canvasRect.top);
+            
+            // Set canvas size to match image
+            const img = this.imageManager.currentImage.querySelector('img');
+            if (imageCanvas.width !== img.offsetWidth) {
+                imageCanvas.width = img.offsetWidth;
+                imageCanvas.height = img.offsetHeight;
+                
+                // Reload existing drawing after resize
+                const existingData = this.imageManager.imageDrawings.get(imageId);
+                if (existingData) {
+                    this.imageManager.loadDrawingToCanvas(imageCanvas, existingData);
+                }
             }
-
-            const lastPoint = this.points[this.points.length - 2];
-            const lastMidPoint = {
-                x: (lastPoint.x + x) / 2,
-                y: (lastPoint.y + y) / 2,
-            };
-            this.ctx.quadraticCurveTo(lastPoint.x, lastPoint.y, lastMidPoint.x, lastMidPoint.y);
-
-            this.ctx.stroke();
+            
+            targetCanvas = imageCanvas;
+            targetCtx = imageCanvas.getContext('2d');
+            
+            // Copy drawing settings
+            targetCtx.lineCap = this.ctx.lineCap;
+            targetCtx.lineJoin = this.ctx.lineJoin;
+            targetCtx.lineWidth = this.ctx.lineWidth;
+            targetCtx.strokeStyle = this.ctx.strokeStyle;
         }
     }
+
+    this.points.push({ x: adjustedX, y: adjustedY });
+
+    if (this.points.length >= 2) {
+        targetCtx.beginPath();
+        targetCtx.moveTo(this.points[0].x, this.points[0].y);
+
+        for (let i = 1; i < this.points.length - 1; i++) {
+            const midPoint = {
+                x: (this.points[i].x + this.points[i + 1].x) / 2,
+                y: (this.points[i].y + this.points[i + 1].y) / 2,
+            };
+            targetCtx.quadraticCurveTo(this.points[i].x, this.points[i].y, midPoint.x, midPoint.y);
+        }
+
+        const lastPoint = this.points[this.points.length - 2];
+        const lastMidPoint = {
+            x: (lastPoint.x + adjustedX) / 2,
+            y: (lastPoint.y + adjustedY) / 2,
+        };
+        targetCtx.quadraticCurveTo(lastPoint.x, lastPoint.y, lastMidPoint.x, lastMidPoint.y);
+
+        targetCtx.stroke();
+    }
+}
+
     
     // Function to download the canvas as an image
     downloadCanvas() {
