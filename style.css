@@ -250,12 +250,52 @@ body.dark-mode .tab.active {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    overflow-y: hidden;
+    overflow-y: auto;
 }
 
 body.dark-mode .controls-sidebar {
     background-color: var(--element-bg-dark);
     border-color: var(--border-dark);
+}
+
+.tool-palette {
+    display: flex;
+    justify-content: space-around;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-light);
+    margin-bottom: 10px;
+}
+
+body.dark-mode .tool-palette {
+    border-color: var(--border-dark);
+}
+
+.tool-btn {
+    background: none;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 8px;
+    transition: background-color 0.2s, transform 0.2s, border-color 0.2s;
+}
+
+body.dark-mode .tool-btn {
+    border-color: var(--border-dark);
+}
+
+.tool-btn.active {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    transform: scale(1.1);
+}
+
+.tool-btn.active img {
+    filter: brightness(0) invert(1);
+}
+
+.tool-btn img {
+    width: 24px;
+    height: 24px;
 }
 
 .brush-size-control {
@@ -311,10 +351,15 @@ body.dark-mode .color-box {
     cursor: crosshair;
     background-color: transparent; /* Change from var(--bg-light) to transparent */
     position: relative;
+    z-index: 2;
 }
 
 body.dark-mode #scribbleCanvas {
     background-color: transparent; /* Change from var(--bg-dark) to transparent */
+}
+
+#scribbleCanvas.pointer-mode {
+    cursor: default;
 }
 
 #clearButton {
@@ -381,7 +426,7 @@ body.dark-mode #footer {
 }
 
 #footer-buttons button:hover {
-    background-color: #0056b3; /* Slightly darker blue on hover */
+    background-color: #0056b3;
 }
 
 .sidebar-btn {
@@ -409,7 +454,7 @@ body.dark-mode #footer {
     width: 100%;
     height: 100%;
     pointer-events: none;
-    z-index: 1; /* Images below canvas */
+    z-index: 1; /* Images are behind the canvas, so drawing is possible */
 }
 
 .image-container {
@@ -418,11 +463,13 @@ body.dark-mode #footer {
     user-select: none;
     pointer-events: auto; /* Only the image containers should have pointer events */
     box-sizing: content-box;
+    border: 2px solid transparent;
+    transition: border-color 0.2s;
 }
 
 .image-container.dragging {
     cursor: grabbing !important;
-    z-index: 10; /* Bring to front while dragging */
+    z-index: 3; /* To ensure the dragged image is on top of other elements */
 }
 
 .image-container img {
@@ -439,8 +486,9 @@ body.dark-mode #footer {
     background: var(--primary-color);
     border: 1px solid #fff;
     border-radius: 50%;
-    opacity: 0.8;
+    opacity: 0;
     pointer-events: auto;
+    transition: opacity 0.2s;
 }
 
 .resize-handle.tl {
@@ -468,23 +516,12 @@ body.dark-mode #footer {
 }
 
 /* Multiple Image Support - Add these new styles */
-.image-container {
-    position: absolute;
-    cursor: grab;
-    user-select: none;
-    pointer-events: auto;
-    box-sizing: content-box;
-    border: 2px solid transparent; /* Add transparent border */
-    transition: border-color 0.2s; /* Add transition */
-}
-
 .image-container.selected {
     border-color: var(--primary-color);
 }
 
-.image-container.dragging {
-    cursor: grabbing !important;
-    z-index: 10; /* This already exists - keep it */
+.image-container.selected .resize-handle {
+    opacity: 0.8;
 }
 
 /* Delete button for images */
@@ -517,22 +554,4 @@ body.dark-mode .image-delete-btn {
 
 .image-delete-btn:hover {
     background: #ff0000;
-}
-
-/* Hide resize handles when not selected */
-.resize-handle {
-    position: absolute;
-    width: 12px;
-    height: 12px;
-    background: var(--primary-color);
-    border: 1px solid #fff;
-    border-radius: 50%;
-    opacity: 0; /* Change from 0.8 to 0 */
-    pointer-events: auto;
-    transition: opacity 0.2s; /* Add transition */
-}
-
-/* Show resize handles only on selected images */
-.image-container.selected .resize-handle {
-    opacity: 0.8;
 }
