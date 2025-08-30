@@ -377,56 +377,83 @@ body.dark-mode #scribbleCanvas {
     background-color: #0056b3;
 }
 
+/* --- Footer --- */
 #footer {
-    padding: 10px 20px;
-    background-color: #f0f0f0; /* Light gray background */
-    border-top: 1px solid #e0e0e0; /* Light gray border */
-    display: flex;
-    justify-content: space-between; /* Distribute items with space between */
-    align-items: center;
-    flex-shrink: 0;
-    font-size: 0.8em;
-    color: #555;
+  padding: 10px 20px;
+  background-color: var(--header-bg-light); /* Use header background for consistency */
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 14px;
+  color: var(--text-light);
+  box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.05);
+  transition: background-color 0.3s, border-color 0.3s, color 0.3s;
 }
 
 body.dark-mode #footer {
-    background-color: #333; /* Darker gray for dark mode footer */
-    border-color: #444;
-    color: #bbb;
+  background-color: var(--header-bg-dark);
+  border-top-color: var(--border-dark);
+  color: var(--text-dark);
+  box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.2);
 }
 
 #footer-info {
-    flex-grow: 1;
-    text-align: left;
+  flex-grow: 1;
+  text-align: left;
 }
 
 #footer-info a {
-    color: var(--primary-color);
-    text-decoration: none;
+  color: var(--primary-color);
+  text-decoration: none;
 }
 
 #footer-info a:hover {
-    text-decoration: underline;
+  text-decoration: underline;
 }
 
 #footer-buttons {
-    display: flex;
-    gap: 10px; /* Space between buttons */
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
-#footer-buttons button {
-    background-color: var(--primary-color); /* Blue color for buttons */
-    color: white;
-    border: none;
-    padding: 8px 16px; /* Increased size */
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-    transition: background-color 0.2s;
+/* Styles for footer buttons, aligning with other header buttons */
+#downloadBtn,
+#printBtn,
+#uploadBtn {
+  cursor: pointer;
+  touch-action: manipulation;
+  padding: 6px 12px;
+  font-size: 14px;
+  border: 1px solid var(--primary-color);
+  background-color: var(--primary-color);
+  color: white;
+  border-radius: 6px;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, transform 0.1s;
 }
 
-#footer-buttons button:hover {
-    background-color: #0056b3;
+#downloadBtn:hover,
+#printBtn:hover,
+#uploadBtn:hover {
+  background-color: #0069d9;
+  border-color: #0069d9;
+  transform: translateY(-1px);
+}
+
+body.dark-mode #downloadBtn,
+body.dark-mode #printBtn,
+body.dark-mode #uploadBtn {
+  background-color: var(--element-bg-dark);
+  border-color: var(--border-dark);
+  color: var(--text-dark);
+}
+
+body.dark-mode #downloadBtn:hover,
+body.dark-mode #printBtn:hover,
+body.dark-mode #uploadBtn:hover {
+  background-color: #3e3e40;
 }
 
 .sidebar-btn {
