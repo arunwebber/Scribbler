@@ -12,18 +12,19 @@ function debounce(func, wait) {
 class StorageManager {
     static saveToLocalStorage(key, value) {
         try {
-            localStorage.setItem(key, value);
+            localStorage.setItem(key, JSON.stringify(value));
         } catch (e) {
-            console.error("Could not save to localStorage: ", e);
+            console.error("Failed to save to localStorage: ", e);
         }
     }
 
-    static getFromLocalStorage(key, defaultValue = '') {
+    static getFromLocalStorage(key) {
         try {
-            return localStorage.getItem(key) || defaultValue;
+            const value = localStorage.getItem(key);
+            return value ? JSON.parse(value) : null;
         } catch (e) {
-            console.error("Could not retrieve from localStorage: ", e);
-            return defaultValue;
+            console.error("Failed to get from localStorage: ", e);
+            return null;
         }
     }
 
@@ -31,8 +32,137 @@ class StorageManager {
         try {
             localStorage.removeItem(key);
         } catch (e) {
-            console.error("Could not remove from localStorage: ", e);
+            console.error("Failed to remove from localStorage: ", e);
         }
+    }
+}
+
+class ApiKeyManager {
+    constructor() {
+        this.modal = document.getElementById('apiKeyModal');
+        this.apiKeyInput = document.getElementById('apiKeyInput');
+        this.saveBtn = document.getElementById('saveApiKeyBtn');
+        this.closeBtn = document.getElementById('closeModalBtn');
+        this.settingsBtn = document.getElementById('settingsButton');
+
+        this.bindEvents();
+    }
+
+    bindEvents() {
+        if (this.settingsBtn) {
+            this.settingsBtn.addEventListener('click', () => {
+                this.showModal();
+            });
+        }
+        if (this.saveBtn) {
+            this.saveBtn.addEventListener('click', () => {
+                this.saveApiKey();
+            });
+        }
+        if (this.closeBtn) {
+            this.closeBtn.addEventListener('click', () => {
+                this.hideModal();
+            });
+        }
+        if (this.modal) {
+            this.modal.addEventListener('click', (event) => {
+                if (event.target === this.modal) {
+                    this.hideModal();
+                }
+            });
+        }
+    }
+
+    showModal() {
+        const existingKey = StorageManager.getFromLocalStorage('apiKey');
+        if (existingKey) {
+            this.apiKeyInput.value = existingKey;
+        } else {
+            this.apiKeyInput.value = '';
+        }
+        this.modal.style.display = 'flex';
+    }
+
+    hideModal() {
+        this.modal.style.display = 'none';
+    }
+
+    saveApiKey() {
+        const apiKey = this.apiKeyInput.value;
+        StorageManager.saveToLocalStorage('apiKey', apiKey);
+        this.hideModal();
+    }
+}
+class ScribbleAIIntegration {
+    constructor(scribbleApp) {
+        this.scribbleApp = scribbleApp;
+        this.aiPanel = document.getElementById('rightPanel');
+        this.aiNoteElement = document.querySelector('.ai-note');
+        this.aiWriteButton = document.getElementById('aiWriteButton');
+        this.pollingTimeout = null;
+        this.apiCache = {};
+        this.bindEvents();
+    }
+
+    bindEvents() {
+        if (this.aiWriteButton) {
+            this.aiWriteButton.addEventListener('click', () => this.handleAiWrite());
+        }
+    }
+
+    async handleAiWrite() {
+        const apiKey = StorageManager.getFromLocalStorage('apiKey');
+        if (!apiKey) {
+            App.apiKeyManager.showModal();
+            return;
+        }
+
+        const dataToAnalyze = this.extractScribbleData();
+        if (!dataToAnalyze) {
+            this.aiNoteElement.textContent = 'Please upload or create an image to analyze.';
+            return;
+        }
+
+        this.aiNoteElement.textContent = 'Analyzing...';
+        
+        try {
+            const requestBody = { image: dataToAnalyze };
+            // Note: This is a placeholder for your API endpoint.
+            // You will need to replace this with the actual API URL.
+            const response = await this.callAiApi('POST', 'https://your-imagine-pro-api-endpoint/v1/analyze-image', apiKey, requestBody);
+            this.aiNoteElement.textContent = response.description;
+        } catch (error) {
+            this.aiNoteElement.textContent = `Error: ${error.message}`;
+        }
+    }
+
+    extractScribbleData() {
+        // You'll need to get the canvas data as a data URL.
+        const canvas = document.getElementById('mainCanvas');
+        if (canvas.toDataURL) {
+            return canvas.toDataURL('image/png');
+        }
+        return null;
+    }
+
+    async callAiApi(method, url, apiKey, body) {
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}` // Assuming the API uses a Bearer token
+        };
+
+        const config = {
+            method: method,
+            headers: headers,
+            body: JSON.stringify(body)
+        };
+
+        const response = await fetch(url, config);
+        if (!response.ok) {
+            throw new Error(`API call failed with status ${response.status}`);
+        }
+
+        return response.json();
     }
 }
 
@@ -908,16 +1038,19 @@ class App {
     static renderer;
     static toolManager;
     static interactionManager;
+    static apiKeyManager;
+    static scribbleAIIntegration;
 
     static initialize() {
         this.layerManager = new LayerManager();
         this.renderer = new Renderer('mainCanvas', 'overlayCanvas');
         this.toolManager = new ToolManager();
         this.interactionManager = new InteractionManager(this.renderer.overlayCanvas, this.layerManager, this.renderer);
+        this.apiKeyManager = new ApiKeyManager();
+        this.scribbleAIIntegration = new ScribbleAIIntegration(this); // Pass the App instance
         TabManager.initialize(this.layerManager);
     }
 }
-
 // Initialize the application
 document.addEventListener("DOMContentLoaded", () => {
     App.initialize();

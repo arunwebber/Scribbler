@@ -29,9 +29,11 @@
         <div class="controls-sidebar">
             <div id="toolPalette" class="tool-palette">
                 <button id="brushTool" class="tool-btn active" title="Brush Tool">
-<img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20.2 13.7l-5-5a2 2 0 00-2.8 0L3 17.5V21h3.5l9.8-9.8a2 2 0 000-2.8z'/><path d='M18 10l-3.5 3.5'/><path d='M19 11l-2.5 2.5'/></svg>" />                </button>
+<img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20.2 13.7l-5-5a2 2 0 00-2.8 0L3 17.5V21h3.5l9.8-9.8a2 2 0 000-2.8z'/><path d='M18 10l-3.5 3.5'/><path d='M19 11l-2.5 2.5'/></svg>" />
+                </button>
                 <button id="pointerTool" class="tool-btn" title="Pointer Tool">
-<img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 3l7.07 16.97L17.76 17L21 3L3 3z'/></svg>" />                </button>
+<img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 3l7.07 16.97L17.76 17L21 3L3 3z'/></svg>" />
+                </button>
             </div>
             <div class="brush-size-control">
                 <label for="brushSizeSlider">Brush Size:</label>
@@ -63,7 +65,7 @@
                 <button id="settingsButton">⚙️</button>
             </div>
         </div>
-        </div>
+    </div>
 
     <div id="footer">
         <div id="footer-info">
@@ -76,25 +78,23 @@
     </div>
     
     <input type="file" id="image-upload" accept="image/*" style="display: none;">
-
-    <div id="apiKeyModal" class="modal-overlay" style="display:none;">
-      <div class="modal-content">
+    <div id="apiKeyModal" class="modal-overlay">
+    <div class="modal-content">
         <h2>Enter AI API Key</h2>
         <p>Please enter your API key to enable AI features.</p>
         <input type="password" id="apiKeyInput" placeholder="Enter API Key" />
         <div class="modal-buttons">
-          <button id="saveApiKeyBtn">Save</button>
-          <button id="closeModalBtn">Cancel</button>
+        <button id="saveApiKeyBtn">Save</button>
+        <button id="closeModalBtn">Cancel</button>
         </div>
         <h3>Get your AI API key from 
-          <a href="https://www.imaginepro.ai/?via=arun" target="_blank">Here</a>
+        <a href="https://www.imaginepro.ai/?via=arun" target="_blank">Here</a>
         </h3>
         <p class="disclaimer">
-          We are not anywhere associated with Imagine Pro. The data which you are providing to them is your sole responsibility. We will attach more AI engines in coming versions. Also, if you want to host your own AI engine which lives inside your machine, let us know.
+        We are not anywhere associated with Imagine Pro. The data which you are providing to them is your sole responsibility. We will attach more AI engines in coming versions. Also, if you want to host your own AI engine which lives inside your machine, let us know.
         </p>
-      </div>
     </div>
-
+    </div>
     <script src="popup.js"></script>
 </body>
 </html>
