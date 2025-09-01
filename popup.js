@@ -93,76 +93,77 @@ class ApiKeyManager {
         this.hideModal();
     }
 }
-class ScribbleAIIntegration {
-    constructor(scribbleApp) {
-        this.scribbleApp = scribbleApp;
-        this.aiPanel = document.getElementById('rightPanel');
-        this.aiNoteElement = document.querySelector('.ai-note');
-        this.aiWriteButton = document.getElementById('aiWriteButton');
-        this.pollingTimeout = null;
-        this.apiCache = {};
-        this.bindEvents();
-    }
 
-    bindEvents() {
-        if (this.aiWriteButton) {
-            this.aiWriteButton.addEventListener('click', () => this.handleAiWrite());
-        }
+// ScribbleAIIntegration Class: Handles the AI-powered features
+class ScribbleAIIntegration {
+    constructor(appInstance) {
+        this.app = appInstance;
+        this.aiWriteBtn = document.getElementById('aiWriteButton');
+        this.aiPromptInput = document.getElementById('aiPromptInput');
+        this.aiWriteBtn.addEventListener('click', () => this.handleAiWrite());
     }
 
     async handleAiWrite() {
+        const prompt = this.aiPromptInput.value.trim();
+        if (!prompt) {
+            alert('Please enter a prompt for the AI to generate an image.');
+            return;
+        }
+
         const apiKey = StorageManager.getFromLocalStorage('apiKey');
         if (!apiKey) {
-            App.apiKeyManager.showModal();
+            alert('Please enter your AI API key in the settings (⚙️) to use this feature.');
             return;
         }
 
-        const dataToAnalyze = this.extractScribbleData();
-        if (!dataToAnalyze) {
-            this.aiNoteElement.textContent = 'Please upload or create an image to analyze.';
-            return;
-        }
+        this.aiWriteBtn.disabled = true;
+        this.aiWriteBtn.textContent = 'Generating...';
 
-        this.aiNoteElement.textContent = 'Analyzing...';
-        
         try {
-            const requestBody = { image: dataToAnalyze };
-            // Note: This is a placeholder for your API endpoint.
-            // You will need to replace this with the actual API URL.
-            const response = await this.callAiApi('POST', 'https://your-imagine-pro-api-endpoint/v1/analyze-image', apiKey, requestBody);
-            this.aiNoteElement.textContent = response.description;
+            const result = await this.callAiApi(prompt, apiKey);
+            if (result.success) {
+                // The ImaginePro API returns a messageId, not the image itself.
+                // You would need to implement a polling mechanism or use a webhook to get the final image URL.
+                // For this example, we'll just log the messageId.
+                console.log('Image generation request successful. Message ID:', result.messageId);
+                alert('Image generation started. Please check the console for the message ID.');
+            } else {
+                alert('API call failed: ' + (result.error || 'Unknown error.'));
+            }
         } catch (error) {
-            this.aiNoteElement.textContent = `Error: ${error.message}`;
+            console.error('Error calling the AI API:', error);
+            alert('An error occurred while generating the image.');
+        } finally {
+            this.aiWriteBtn.disabled = false;
+            this.aiWriteBtn.textContent = 'Write with AI';
         }
     }
 
-    extractScribbleData() {
-        // You'll need to get the canvas data as a data URL.
-        const canvas = document.getElementById('mainCanvas');
-        if (canvas.toDataURL) {
-            return canvas.toDataURL('image/png');
-        }
-        return null;
-    }
-
-    async callAiApi(method, url, apiKey, body) {
+    async callAiApi(prompt, apiKey) {
+        const API_URL = 'https://api.imaginepro.ai/api/v1/flux/imagine';
+        
         const headers = {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}` // Assuming the API uses a Bearer token
+            'Authorization': `Bearer ${apiKey}`
         };
 
-        const config = {
-            method: method,
+        const body = JSON.stringify({
+            prompt: prompt,
+            n: 1 // Generates 1 image
+        });
+
+        const response = await fetch(API_URL, {
+            method: 'POST',
             headers: headers,
-            body: JSON.stringify(body)
-        };
+            body: body
+        });
 
-        const response = await fetch(url, config);
         if (!response.ok) {
-            throw new Error(`API call failed with status ${response.status}`);
+            const errorText = await response.text();
+            throw new Error(`HTTP error! Status: ${response.status}, Message: ${errorText}`);
         }
 
-        return response.json();
+        return await response.json();
     }
 }
 
