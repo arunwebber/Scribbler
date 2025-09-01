@@ -1316,6 +1316,15 @@ darkModeToggle.addEventListener('change', () => {
     StorageManager.saveToLocalStorage('darkMode', darkModeToggle.checked);
 });
 
+
+// Initial dark mode check - Fix the comparison
+const savedDarkMode = StorageManager.getFromLocalStorage('darkMode');
+if (savedDarkMode === true) { // Check for boolean true (not string 'true')
+    darkModeToggle.checked = true;
+    document.body.classList.add('dark-mode');
+}
+
+
 // Initial dark mode check
 if (StorageManager.getFromLocalStorage('darkMode') === 'true') {
     darkModeToggle.checked = true;
