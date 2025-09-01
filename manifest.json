@@ -19,6 +19,9 @@
     "48": "images/icon_48.png",
     "128": "images/icon_128.png"
   },
+  "host_permissions": [
+    "https://api.imaginepro.ai/*"
+  ],
   "homepage_url": "https://hashpallabs.com/", 
   "author": "HashPalLabs"
 }

@@ -1,3 +1,7 @@
+// Add this at the very top of popup.js
+console.log('Popup script loaded');
+console.log('chrome.runtime available?', typeof chrome !== 'undefined' && chrome.runtime);
+console.log('Window location:', window.location.href);
 // Global utility functions
 function debounce(func, wait) {
     let timeout;
@@ -140,30 +144,34 @@ class ScribbleAIIntegration {
     }
 
     async callAiApi(prompt, apiKey) {
-        const API_URL = 'https://api.imaginepro.ai/api/v1/flux/imagine';
+        const API_URL = 'https://api.imaginepro.ai/api/v1/nova/imagine';
         
-        const headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-        };
-
-        const body = JSON.stringify({
-            prompt: prompt,
-            n: 1 // Generates 1 image
+        console.log('=== Starting API Call via Background Script ===');
+        console.log('Endpoint:', API_URL);
+        console.log('Prompt:', prompt);
+        
+        return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({
+                action: 'callAiApi',
+                url: API_URL,
+                prompt: prompt,
+                apiKey: apiKey
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('Background script error:', chrome.runtime.lastError);
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
+                }
+                
+                if (response && response.success) {
+                    console.log('API Success:', response.data);
+                    resolve(response.data);
+                } else {
+                    console.error('API Error:', response?.error);
+                    reject(new Error(response?.error || 'Unknown error'));
+                }
+            });
         });
-
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: headers,
-            body: body
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP error! Status: ${response.status}, Message: ${errorText}`);
-        }
-
-        return await response.json();
     }
 }
 
