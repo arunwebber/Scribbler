@@ -107,6 +107,31 @@ class ScribbleAIIntegration {
         this.aiWriteBtn.addEventListener('click', () => this.handleAiWrite());
     }
 
+    calculateImagePositions(count = 4) {
+        // Calculate positions for a 2x2 grid
+        const canvasWidth = App.renderer.mainCanvas.width;
+        const canvasHeight = App.renderer.mainCanvas.height;
+        const padding = 20;
+        const imageSize = Math.min(
+            (canvasWidth - padding * 3) / 2,
+            (canvasHeight - padding * 3) / 2,
+            200 // Max size
+        );
+        
+        const positions = [];
+        for (let i = 0; i < count; i++) {
+            const row = Math.floor(i / 2);
+            const col = i % 2;
+            positions.push({
+                x: padding + col * (imageSize + padding),
+                y: padding + row * (imageSize + padding),
+                width: imageSize,
+                height: imageSize
+            });
+        }
+        return positions;
+    }
+
     async handleAiWrite() {
         const prompt = this.aiPromptInput.value.trim();
         if (!prompt) {
@@ -125,19 +150,101 @@ class ScribbleAIIntegration {
 
         try {
             const result = await this.callAiApi(prompt, apiKey);
-            if (result.success) {
-                // The ImaginePro API returns a messageId, not the image itself.
-                // You would need to implement a polling mechanism or use a webhook to get the final image URL.
-                // For this example, we'll just log the messageId.
-                console.log('Image generation request successful. Message ID:', result.messageId);
-                alert('Image generation started. Please check the console for the message ID.');
-            } else {
-                alert('API call failed: ' + (result.error || 'Unknown error.'));
-            }
+            console.log('Image generation started. Message ID:', result.messageId);
+            
+            // Add 4 placeholder layers immediately
+            const positions = this.calculateImagePositions(4);
+            const placeholderIds = [];
+            
+            positions.forEach((pos, index) => {
+                const placeholderId = `placeholder_${result.messageId}_${index}`;
+                App.layerManager.addPlaceholderLayer(
+                    placeholderId,
+                    pos.x,
+                    pos.y,
+                    pos.width,
+                    pos.height
+                );
+                placeholderIds.push(placeholderId);
+            });
+            
+            // Polling for status
+            let attempts = 0;
+            const maxAttempts = 60; // 2 minutes max
+            
+            const pollStatus = async () => {
+                if (attempts >= maxAttempts) {
+                    // Remove placeholders on timeout
+                    placeholderIds.forEach(id => App.layerManager.removeLayer(id));
+                    throw new Error('Image generation timed out');
+                }
+                
+                try {
+                    const status = await this.checkImageStatus(result.messageId, apiKey);
+                    
+                    // Update progress on all placeholders
+                    if (status.progress !== undefined) {
+                        this.aiWriteBtn.textContent = `Processing... ${status.progress}%`;
+                        placeholderIds.forEach(id => {
+                            App.layerManager.updateLayerProgress(id, status.progress);
+                        });
+                    }
+                    
+                    if (status.status === 'completed' && status.images && status.images.length > 0) {
+                        console.log('Images ready:', status.images);
+                        
+                        // Replace each placeholder with its corresponding image
+                        status.images.forEach((imageUrl, index) => {
+                            if (index < placeholderIds.length) {
+                                App.layerManager.replacePlaceholderWithImage(
+                                    placeholderIds[index],
+                                    imageUrl
+                                );
+                            }
+                        });
+                        
+                        // If there's also a combined image and we want to show it
+                        // You can add it as a 5th image or replace this logic
+                        // App.layerManager.addImageLayer(status.imageUrl);
+                        
+                        this.aiWriteBtn.disabled = false;
+                        this.aiWriteBtn.textContent = 'Write with AI';
+                        this.aiPromptInput.value = ''; // Clear the prompt
+                        return;
+                        
+                    } else if (status.status === 'failed') {
+                        // Remove placeholders on failure
+                        placeholderIds.forEach(id => App.layerManager.removeLayer(id));
+                        throw new Error(status.error || 'Image generation failed');
+                    } else {
+                        // Still processing, continue polling
+                        attempts++;
+                        setTimeout(pollStatus, 2000);
+                    }
+                } catch (error) {
+                    console.error('Polling error:', error);
+                    
+                    // If it's a connection error, try a few more times
+                    if (error.message.includes('message port closed') && attempts < 3) {
+                        attempts++;
+                        setTimeout(pollStatus, 3000);
+                    } else {
+                        // Remove placeholders on error
+                        placeholderIds.forEach(id => {
+                            const layer = App.layerManager.layers.find(l => l.id === id);
+                            if (layer) App.layerManager.removeLayer(id);
+                        });
+                        throw error;
+                    }
+                }
+            };
+            
+            // Start polling
+            setTimeout(pollStatus, 2000);
+            
         } catch (error) {
-            console.error('Error calling the AI API:', error);
-            alert('An error occurred while generating the image.');
-        } finally {
+            console.error('Error in AI generation:', error);
+            alert(`An error occurred: ${error.message}`);
             this.aiWriteBtn.disabled = false;
             this.aiWriteBtn.textContent = 'Write with AI';
         }
@@ -168,6 +275,51 @@ class ScribbleAIIntegration {
                     resolve(response.data);
                 } else {
                     console.error('API Error:', response?.error);
+                    reject(new Error(response?.error || 'Unknown error'));
+                }
+            });
+        });
+    }
+
+    async checkImageStatus(messageId, apiKey) {
+        console.log('Checking image status for messageId:', messageId);
+        
+        return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({
+                action: 'checkStatus',
+                messageId: messageId,
+                apiKey: apiKey
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('Status check runtime error:', chrome.runtime.lastError);
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
+                }
+                
+                if (response && response.success) {
+                    console.log('Status response:', response.data);
+                    const data = response.data;
+                    
+                    // Parse ImaginePro's response format
+                    if (data.status === 'DONE' && data.images && data.images.length > 0) {
+                        resolve({
+                            status: 'completed',
+                            imageUrl: data.uri,  // Combined image
+                            images: data.images, // All 4 variations
+                            progress: data.progress || 100
+                        });
+                    } else if (data.status === 'FAILED' || data.error) {
+                        resolve({
+                            status: 'failed',
+                            error: data.error || 'Generation failed'
+                        });
+                    } else {
+                        resolve({
+                            status: 'processing',
+                            progress: data.progress || 0
+                        });
+                    }
+                } else {
                     reject(new Error(response?.error || 'Unknown error'));
                 }
             });
@@ -267,6 +419,49 @@ class LayerManager {
         }
         this.setActiveLayer(null);
         return null;
+    }
+    
+    // Add these methods to LayerManager class
+    addPlaceholderLayer(id, x, y, width, height) {
+        const newLayer = {
+            id: id,
+            type: 'placeholder',
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            progress: 0
+        };
+        this.addLayer(newLayer);
+        return newLayer;
+    }
+
+    updateLayerProgress(layerId, progress) {
+        const layer = this.layers.find(l => l.id === layerId);
+        if (layer && layer.type === 'placeholder') {
+            layer.progress = progress;
+            this.saveState();
+            App.renderer.renderAllLayers();
+        }
+    }
+
+    replacePlaceholderWithImage(placeholderId, imageUrl) {
+        const placeholderIndex = this.layers.findIndex(l => l.id === placeholderId);
+        if (placeholderIndex !== -1) {
+            const placeholder = this.layers[placeholderIndex];
+            const imageLayer = {
+                id: `image_${Date.now()}_${Math.random()}`,
+                type: 'image',
+                data: imageUrl,
+                x: placeholder.x,
+                y: placeholder.y,
+                width: placeholder.width,
+                height: 'auto'
+            };
+            this.layers[placeholderIndex] = imageLayer;
+            this.saveState();
+            App.renderer.renderAllLayers();
+        }
     }
 
     saveStateToHistory() {
@@ -677,21 +872,80 @@ class Renderer {
         };
     }
 
+    renderPlaceholder(layer) {
+        const ctx = this.mainCtx;
+        ctx.save();
+        
+        // Draw placeholder background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+        ctx.fillRect(layer.x, layer.y, layer.width, layer.height);
+        
+        // Draw border
+        ctx.strokeStyle = '#007bff';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(layer.x, layer.y, layer.width, layer.height);
+        ctx.setLineDash([]);
+        
+        // Draw progress text
+        ctx.fillStyle = '#007bff';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        const centerX = layer.x + layer.width / 2;
+        const centerY = layer.y + layer.height / 2;
+        
+        if (layer.progress !== undefined) {
+            // Draw progress circle
+            const radius = 30;
+            const startAngle = -Math.PI / 2;
+            const endAngle = startAngle + (2 * Math.PI * layer.progress / 100);
+            
+            // Background circle
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+            ctx.strokeStyle = 'rgba(0, 123, 255, 0.2)';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+            
+            // Progress arc
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+            ctx.strokeStyle = '#007bff';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+            
+            // Progress text
+            ctx.fillStyle = '#007bff';
+            ctx.font = 'bold 14px Arial';
+            ctx.fillText(`${layer.progress}%`, centerX, centerY);
+        } else {
+            ctx.fillText('Generating...', centerX, centerY);
+        }
+        
+        ctx.restore();
+    }
+
     renderAllLayers() {
         this.mainCtx.clearRect(0, 0, this.mainCanvas.width, this.mainCanvas.height);
         
         const layers = App.layerManager.getLayers();
         layers.forEach(layer => {
-            const img = new Image();
-            img.onload = () => {
-                if (layer.type === 'drawing') {
-                    this.mainCtx.drawImage(img, 0, 0);
-                } else if (layer.type === 'image') {
-                    const layerHeight = this.getImageHeight(layer);
-                    this.mainCtx.drawImage(img, layer.x, layer.y, layer.width, layerHeight);
-                }
-            };
-            img.src = layer.data;
+            if (layer.type === 'placeholder') {
+                this.renderPlaceholder(layer);
+            } else {
+                const img = new Image();
+                img.onload = () => {
+                    if (layer.type === 'drawing') {
+                        this.mainCtx.drawImage(img, 0, 0);
+                    } else if (layer.type === 'image') {
+                        const layerHeight = this.getImageHeight(layer);
+                        this.mainCtx.drawImage(img, layer.x, layer.y, layer.width, layerHeight);
+                    }
+                };
+                img.src = layer.data;
+            }
         });
     }
 
