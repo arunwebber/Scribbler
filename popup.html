@@ -46,7 +46,24 @@
             <canvas id="mainCanvas"></canvas>
             <canvas id="overlayCanvas"></canvas>
         </div>
-    </div>
+
+        <div id="rightPanel">
+            <div class="rightPanel-tabs">
+                <button class="rightTab active" data-tab="explain">Explain</button>
+            </div>
+            
+            <div class="rightPanel-content">
+                <div class="rightTabContent active" id="explain">
+                    <div contenteditable="true" class="ai-note" placeholder="Explanation of the image for drawing will appear here..."></div>
+                </div>
+            </div>
+
+            <div id="buttonWrapper">
+                <button id="aiWriteButton">Write With AI</button>
+                <button id="settingsButton">⚙️</button>
+            </div>
+        </div>
+        </div>
 
     <div id="footer">
         <div id="footer-info">
@@ -59,6 +76,24 @@
     </div>
     
     <input type="file" id="image-upload" accept="image/*" style="display: none;">
+
+    <div id="apiKeyModal" class="modal-overlay" style="display:none;">
+      <div class="modal-content">
+        <h2>Enter AI API Key</h2>
+        <p>Please enter your API key to enable AI features.</p>
+        <input type="password" id="apiKeyInput" placeholder="Enter API Key" />
+        <div class="modal-buttons">
+          <button id="saveApiKeyBtn">Save</button>
+          <button id="closeModalBtn">Cancel</button>
+        </div>
+        <h3>Get your AI API key from 
+          <a href="https://www.imaginepro.ai/?via=arun" target="_blank">Here</a>
+        </h3>
+        <p class="disclaimer">
+          We are not anywhere associated with Imagine Pro. The data which you are providing to them is your sole responsibility. We will attach more AI engines in coming versions. Also, if you want to host your own AI engine which lives inside your machine, let us know.
+        </p>
+      </div>
+    </div>
 
     <script src="popup.js"></script>
 </body>
