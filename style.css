@@ -969,3 +969,58 @@ body.dark-mode .modal-content input {
 #closeModalBtn:hover {
     background-color: #bbb;
 }
+/* AI Prompt Input Section */
+.ai-prompt-section {
+    padding: 10px 15px;
+    border-top: 1px solid var(--border-light);
+}
+
+body.dark-mode .ai-prompt-section {
+    border-top-color: var(--border-dark);
+}
+
+#aiPromptInput {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+    line-height: 1.4;
+    background-color: #fff;
+    color: var(--text-light);
+    box-sizing: border-box;
+    outline: none;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+body.dark-mode #aiPromptInput {
+    background-color: var(--element-bg-dark);
+    border-color: var(--border-dark);
+    color: var(--text-dark);
+}
+
+#aiPromptInput:focus {
+    border-color: var(--primary-color);
+}
+
+#aiPromptInput::placeholder {
+    color: #999;
+}
+
+body.dark-mode #aiPromptInput::placeholder {
+    color: #666;
+}
+
+/* Optional: Add a label for the prompt input */
+.ai-prompt-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-light);
+}
+
+body.dark-mode .ai-prompt-label {
+    color: var(--text-dark);
+}
