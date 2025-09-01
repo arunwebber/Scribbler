@@ -850,6 +850,7 @@ class Renderer {
 
     getImageHeight(layer) {
         const img = new Image();
+        img.crossOrigin = 'anonymous'; // Add this line
         img.src = layer.data;
         const aspectRatio = img.width / img.height;
         return layer.width / aspectRatio;
@@ -936,6 +937,7 @@ class Renderer {
                 this.renderPlaceholder(layer);
             } else {
                 const img = new Image();
+                img.crossOrigin = 'anonymous'; // Add this line
                 img.onload = () => {
                     if (layer.type === 'drawing') {
                         this.mainCtx.drawImage(img, 0, 0);
@@ -948,6 +950,7 @@ class Renderer {
             }
         });
     }
+
 
     renderActiveState() {
         this.overlayCtx.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
@@ -991,22 +994,31 @@ class Renderer {
         }
     }
 
-   downloadCanvas() {
+    downloadCanvas() {
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = this.mainCanvas.width;
         tempCanvas.height = this.mainCanvas.height;
         const tempCtx = tempCanvas.getContext('2d');
-    
+
         const layers = App.layerManager.getLayers();
-        let loadedCount = 0;
-        const totalLayers = layers.length;
-    
+        const renderableLayers = layers.filter(layer => layer.type !== 'placeholder');
+        
+        if (renderableLayers.length === 0 && !this.isDrawing) {
+            const url = tempCanvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `scribbler_drawing_${TabManager.activeTabId}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            return;
+        }
+
         const renderAndDownload = () => {
-            // Draw the current, unsaved drawing stroke on top if it exists
             if (this.isDrawing) {
                 tempCtx.drawImage(this.currentDrawingCanvas, 0, 0);
             }
-    
+
             const url = tempCanvas.toDataURL('image/png');
             const a = document.createElement('a');
             a.href = url;
@@ -1015,25 +1027,37 @@ class Renderer {
             a.click();
             document.body.removeChild(a);
         };
-    
-        if (totalLayers === 0) {
+
+        if (renderableLayers.length === 0) {
             renderAndDownload();
         } else {
-            layers.forEach(layer => {
-                const img = new Image();
-                img.onload = () => {
-                    if (layer.type === 'image') {
-                        const layerHeight = this.getImageHeight(layer);
-                        tempCtx.drawImage(img, layer.x, layer.y, layer.width, layerHeight);
-                    } else if (layer.type === 'drawing') {
-                        tempCtx.drawImage(img, 0, 0);
+            const imagePromises = renderableLayers.map(layer => {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous'; // Add this line
+                    img.onload = () => resolve({ img, layer });
+                    img.onerror = () => {
+                        console.error('Failed to load image for download:', layer);
+                        resolve(null);
+                    };
+                    img.src = layer.data;
+                });
+            });
+
+            Promise.all(imagePromises).then(results => {
+                results.forEach(result => {
+                    if (result) {
+                        const { img, layer } = result;
+                        if (layer.type === 'drawing') {
+                            tempCtx.drawImage(img, 0, 0);
+                        } else if (layer.type === 'image') {
+                            const aspectRatio = img.width / img.height;
+                            const layerHeight = layer.width / aspectRatio;
+                            tempCtx.drawImage(img, layer.x, layer.y, layer.width, layerHeight);
+                        }
                     }
-                    loadedCount++;
-                    if (loadedCount === totalLayers) {
-                        renderAndDownload();
-                    }
-                };
-                img.src = layer.data;
+                });
+                renderAndDownload();
             });
         }
     }
@@ -1044,13 +1068,11 @@ class Renderer {
         tempCanvas.width = this.mainCanvas.width;
         tempCanvas.height = this.mainCanvas.height;
         const tempCtx = tempCanvas.getContext('2d');
-    
+
         const layers = App.layerManager.getLayers();
-        let loadedCount = 0;
-        const totalImages = layers.filter(l => l.type === 'image').length;
-    
+        const renderableLayers = layers.filter(layer => layer.type !== 'placeholder');
+
         const renderAndPrint = () => {
-            // Check if a current drawing exists and draw it onto the temp canvas
             if (this.isDrawing) {
                 tempCtx.drawImage(this.currentDrawingCanvas, 0, 0);
             }
@@ -1070,43 +1092,48 @@ class Renderer {
             printWindow.document.close();
             printWindow.focus();
             
-            // Wait for the image to load in the new window before printing
             const img = printWindow.document.querySelector('img');
             img.onload = () => {
                 printWindow.print();
                 printWindow.close();
             };
         };
-    
-        if (totalImages === 0) {
+
+        if (renderableLayers.length === 0 && !this.isDrawing) {
             renderAndPrint();
-        } else {
-            layers.forEach(layer => {
-                if (layer.type === 'drawing') {
-                    const img = new Image();
-                    img.onload = () => {
+            return;
+        }
+
+        const imagePromises = renderableLayers.map(layer => {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous'; // Add this line
+                img.onload = () => resolve({ img, layer });
+                img.onerror = () => {
+                    console.error('Failed to load image for print:', layer);
+                    resolve(null);
+                };
+                img.src = layer.data;
+            });
+        });
+
+        Promise.all(imagePromises).then(results => {
+            results.forEach(result => {
+                if (result) {
+                    const { img, layer } = result;
+                    if (layer.type === 'drawing') {
                         tempCtx.drawImage(img, 0, 0);
-                        loadedCount++;
-                        if (loadedCount === layers.length) {
-                            renderAndPrint();
-                        }
-                    };
-                    img.src = layer.data;
-                } else if (layer.type === 'image') {
-                    const img = new Image();
-                    img.onload = () => {
-                        const layerHeight = this.getImageHeight(layer);
+                    } else if (layer.type === 'image') {
+                        const aspectRatio = img.width / img.height;
+                        const layerHeight = layer.width / aspectRatio;
                         tempCtx.drawImage(img, layer.x, layer.y, layer.width, layerHeight);
-                        loadedCount++;
-                        if (loadedCount === layers.length) {
-                            renderAndPrint();
-                        }
-                    };
-                    img.src = layer.data;
+                    }
                 }
             });
-        }
+            renderAndPrint();
+        });
     }
+
 }
 
 // TabManager Class: Handles multi-sheet functionality
